@@ -14,6 +14,9 @@ def generate_content(system_prompt, dry_run=False):
     resp = client.messages.create(
         model="claude-sonnet-5",
         max_tokens=8000,
+        thinking={"type": "disabled"},  # 구조화된 JSON 생성엔 추론 불필요.
+        # thinking을 켜두면 max_tokens가 "생각+응답" 합산 한도라
+        # 응답이 완성되기 전에 잘릴 수 있음 (Sonnet 5부터 기본으로 켜져 있음)
         messages=[{"role": "user", "content": system_prompt}],
     )
     text = "".join(b.text for b in resp.content if b.type == "text")
