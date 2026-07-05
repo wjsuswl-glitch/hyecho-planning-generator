@@ -1,8 +1,16 @@
 """few-shot 예시 선택 + 시스템 프롬프트 조립 모듈"""
 import json
+import unicodedata
 
 import os
 FEWSHOT_PATH = os.path.join(os.path.dirname(__file__), "data", "fewshot_examples.json")
+
+
+def _nfc(s):
+    """macOS 등에서 NFD(자모 분리형)로 저장된 한글 문자열을
+    NFC(완성형)로 정규화. JSON 파일의 값과 코드 내 문자열 리터럴의
+    유니코드 정규화 형식이 다르면 '정현지' == '정현지' 비교가 실패한다."""
+    return unicodedata.normalize("NFC", s) if isinstance(s, str) else s
 
 STYLE_RULES = {
     "박소설": "문학적·서정적 문체, 형용사와 비유를 적극 활용. 표지에 Design Direction(톤앤매너/색상/키워드)을 명시.",
@@ -16,8 +24,14 @@ BANNER_MAP_INCLUDE = {"박소설": True, "신윤정": True, "정현지": False}
 def load_fewshot_examples(writer_style, category, k=3):
     with open(FEWSHOT_PATH, encoding="utf-8") as f:
         all_examples = json.load(f)
-    same = [e for e in all_examples if e["writer_style"] == writer_style and e["category"] == category]
-    other_cat = [e for e in all_examples if e["writer_style"] == writer_style and e["category"] != category]
+
+    writer_style = _nfc(writer_style)
+    category = _nfc(category)
+
+    same = [e for e in all_examples
+            if _nfc(e["writer_style"]) == writer_style and _nfc(e["category"]) == category]
+    other_cat = [e for e in all_examples
+                 if _nfc(e["writer_style"]) == writer_style and _nfc(e["category"]) != category]
     picked = (same[:2] + other_cat[:1])[:k]
     return picked
 
@@ -58,10 +72,15 @@ why_hyecho와 season 섹션은 {"같은 슬라이드에 합쳐서" if LAYOUT_HIN
 반드시 JSON으로만 응답하세요. 다른 텍스트를 포함하지 마세요.
 스키마: cover(tagline, product_name, intro_copy), sections[](type, items), why_hyecho(title, points[]), season(title, content)
 
-[Few-shot 예시 {len(examples)}개]
-{json.dumps(examples, ensure_ascii=False, indent=2)[:2000]}
+[Few-shot 예시 {len(examples)}개 — 문체·구조 참고 전용]
+아래 예시들은 전혀 다른 여행 상품(지명, 코스, 하이라이트 등)에 대한 과거 결과물입니다.
+문장 톤·문단 구성 방식·섹션 나누는 방식만 참고하세요.
+예시에 등장하는 지명, 상품명, 문구, 숫자, 이미지 캡션은 절대 그대로 재사용하지 마세요.
+아래 [실제 입력]에 없는 내용(예: 안데스, 페루, 마추픽추 등 예시 속 고유명사)이
+출력에 등장하면 안 됩니다. 반드시 [실제 입력]에 있는 사실만으로 콘텐츠를 생성하세요.
+{json.dumps(examples, ensure_ascii=False, indent=2)}
 
-[실제 입력 — 사업부 원본자료 파싱 결과]
-{json.dumps(parsed_sections, ensure_ascii=False, indent=2)[:3000]}
+[실제 입력 — 사업부 원본자료 파싱 결과 (이 내용만을 근거로 생성)]
+{json.dumps(parsed_sections, ensure_ascii=False, indent=2)}
 """
     return prompt
