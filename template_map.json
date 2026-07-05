@@ -469,6 +469,10 @@
       "season.disclaimer": [
         4,
         5
+      ],
+      "route_overview_title": [
+        0,
+        25
       ]
     },
     "repeatable_groups": {
