@@ -473,6 +473,18 @@
       "route_overview_title": [
         0,
         25
+      ],
+      "hiking_overview.tagline": [
+        2,
+        28
+      ],
+      "hiking_overview.title": [
+        2,
+        59
+      ],
+      "hiking_overview.summary_list": [
+        2,
+        60
       ]
     },
     "repeatable_groups": {
@@ -605,6 +617,242 @@
                 51
               ]
             }
+          }
+        ]
+      },
+      "destinations": {
+        "slots": [
+          {
+            "fields": {
+              "title": [
+                2,
+                32
+              ],
+              "description": [
+                2,
+                31
+              ],
+              "stat_line": [
+                2,
+                34
+              ]
+            },
+            "extra_shapes": [
+              [
+                2,
+                33
+              ]
+            ]
+          },
+          {
+            "fields": {
+              "title": [
+                2,
+                65
+              ],
+              "description": [
+                2,
+                64
+              ],
+              "stat_line": [
+                2,
+                2
+              ]
+            },
+            "extra_shapes": [
+              [
+                2,
+                70
+              ]
+            ]
+          },
+          {
+            "fields": {
+              "title": [
+                3,
+                48
+              ],
+              "description": [
+                3,
+                47
+              ],
+              "stat_line": [
+                3,
+                52
+              ]
+            },
+            "extra_shapes": [
+              [
+                3,
+                49
+              ]
+            ]
+          },
+          {
+            "fields": {
+              "title": [
+                3,
+                55
+              ],
+              "description": [
+                3,
+                54
+              ],
+              "stat_line": [
+                3,
+                59
+              ]
+            },
+            "extra_shapes": [
+              [
+                3,
+                58
+              ]
+            ]
+          },
+          {
+            "fields": {
+              "title": [
+                2,
+                37
+              ],
+              "description": [
+                2,
+                38
+              ]
+            },
+            "extra_shapes": [
+              [
+                2,
+                39
+              ]
+            ]
+          },
+          {
+            "fields": {
+              "title": [
+                2,
+                47
+              ],
+              "description": [
+                2,
+                48
+              ]
+            },
+            "extra_shapes": [
+              [
+                2,
+                49
+              ]
+            ]
+          },
+          {
+            "fields": {
+              "title": [
+                2,
+                77
+              ],
+              "description": [
+                2,
+                42
+              ]
+            },
+            "extra_shapes": [
+              [
+                2,
+                44
+              ]
+            ]
+          },
+          {
+            "fields": {
+              "title": [
+                3,
+                29
+              ],
+              "description": [
+                3,
+                40
+              ]
+            },
+            "extra_shapes": [
+              [
+                3,
+                43
+              ]
+            ]
+          },
+          {
+            "fields": {
+              "title": [
+                3,
+                62
+              ],
+              "description": [
+                3,
+                63
+              ]
+            },
+            "extra_shapes": [
+              [
+                3,
+                64
+              ],
+              [
+                3,
+                65
+              ],
+              [
+                3,
+                66
+              ]
+            ]
+          },
+          {
+            "fields": {
+              "title": [
+                3,
+                70
+              ],
+              "description": [
+                3,
+                71
+              ]
+            },
+            "extra_shapes": [
+              [
+                3,
+                72
+              ]
+            ]
+          }
+        ]
+      },
+      "map_labels": {
+        "slots": [
+          {
+            "shape": [
+              6,
+              3
+            ]
+          },
+          {
+            "shape": [
+              6,
+              13
+            ]
+          },
+          {
+            "shape": [
+              6,
+              14
+            ]
+          },
+          {
+            "shape": [
+              6,
+              17
+            ]
           }
         ]
       }
