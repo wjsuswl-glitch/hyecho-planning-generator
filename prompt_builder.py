@@ -1,0 +1,66 @@
+"""few-shot 예시 선택 + 시스템 프롬프트 조립 모듈"""
+import json
+
+FEWSHOT_PATH = "/Users/yondi/Desktop/기획안/fewshot_examples.json"
+
+STYLE_RULES = {
+    "박소설": "문학적·서정적 문체, 형용사와 비유를 적극 활용. 표지에 Design Direction(톤앤매너/색상/키워드)을 명시.",
+    "신윤정": "정보 밀도 높은 구조적 문체, 넘버링 카드(특별함 N가지)와 비교표를 활용.",
+    "정현지": "함축적·담백한 문체. 표지는 2줄 대구 형태 태그라인. 3~5장으로 압축.",
+}
+
+LAYOUT_HINT = {"박소설": "separate", "신윤정": "combined", "정현지": "separate"}
+BANNER_MAP_INCLUDE = {"박소설": True, "신윤정": True, "정현지": False}
+
+def load_fewshot_examples(writer_style, category, k=3):
+    with open(FEWSHOT_PATH, encoding="utf-8") as f:
+        all_examples = json.load(f)
+    same = [e for e in all_examples if e["writer_style"] == writer_style and e["category"] == category]
+    other_cat = [e for e in all_examples if e["writer_style"] == writer_style and e["category"] != category]
+    picked = (same[:2] + other_cat[:1])[:k]
+    return picked
+
+def build_system_prompt(writer_style, category, parsed_sections, format_info):
+    examples = load_fewshot_examples(writer_style, category)
+    draft_copy = format_info.get("draft_copy")
+
+    if draft_copy:
+        copy_instruction = (
+            f"[표지 카피 생성 규칙 — 다듬기 모드]\n"
+            f"사업부 자료에 이미 카피 초안이 있습니다: \"{draft_copy}\"\n"
+            f"이 문구를 거의 그대로 유지하되, {writer_style}의 문체에 맞게 어미와 리듬만 다듬으세요. "
+            f"의미나 핵심 단어는 바꾸지 마세요."
+        )
+    else:
+        copy_instruction = (
+            f"[표지 카피 생성 규칙 — 창작 모드]\n"
+            f"사업부 자료에 카피 초안이 없습니다. '컨셉'과 '담당자 기획 의도'에 나온 핵심 개념을 "
+            f"재료로 삼아 {writer_style}의 문체로 2줄 태그라인을 새로 창작하세요."
+        )
+
+    prompt = f"""역할: 당신은 혜초여행사 콘텐츠팀의 {writer_style} 기획자입니다.
+
+[스타일 규칙]
+{STYLE_RULES[writer_style]}
+
+[레이아웃 규칙]
+why_hyecho와 season 섹션은 {"같은 슬라이드에 합쳐서" if LAYOUT_HINT[writer_style]=="combined" else "별도 슬라이드로 나눠서"} 구성하세요.
+배너/지도 슬라이드는 {"포함" if BANNER_MAP_INCLUDE[writer_style] else "생략"}하세요.
+
+[고정 문구 뱅크]
+"혜초와 함께하면", "No 쇼핑! No 옵션!", "국내 유일", "전 일정 인솔자 동행"
+→ 문맥에 자연스럽게 녹여 쓰되 남발하지 않음
+
+{copy_instruction}
+
+[출력 형식]
+반드시 JSON으로만 응답하세요. 다른 텍스트를 포함하지 마세요.
+스키마: cover(tagline, product_name, intro_copy), sections[](type, items), why_hyecho(title, points[]), season(title, content)
+
+[Few-shot 예시 {len(examples)}개]
+{json.dumps(examples, ensure_ascii=False, indent=2)[:2000]}
+
+[실제 입력 — 사업부 원본자료 파싱 결과]
+{json.dumps(parsed_sections, ensure_ascii=False, indent=2)[:3000]}
+"""
+    return prompt

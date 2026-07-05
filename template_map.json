@@ -1,0 +1,27 @@
+{
+  "정현지": {
+    "template": "/Users/yondi/Desktop/자동화_프로토타입/안데스_템플릿.pptx",
+    "field_map": {
+      "cover.tagline": [0, 5],
+      "cover.product_name": [0, 6],
+      "cover.intro_copy": [0, 10],
+      "why_hyecho.points.0": [1, 40],
+      "why_hyecho.points.1": [1, 42],
+      "season.title": [3, 25],
+      "season.content": [3, 29]
+    }
+  },
+  "신윤정": {
+    "template": "/Users/yondi/Desktop/자동화_프로토타입/방글라데시_템플릿.pptx",
+    "field_map": {
+      "cover.tagline": [0, 5],
+      "cover.subtitle": [0, 39],
+      "cover.intro_copy": [0, 34],
+      "why_hyecho.title": [6, 11],
+      "why_hyecho.points.0": [6, 15],
+      "why_hyecho.points.1": [6, 16],
+      "why_hyecho.points.2": [6, 22],
+      "why_hyecho.points.3": [6, 27]
+    }
+  }
+}

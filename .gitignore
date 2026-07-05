@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.DS_Store
+*.docx
+*.pptx
+!안데스_템플릿.pptx
+!방글라데시_템플릿.pptx
