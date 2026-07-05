@@ -13,13 +13,33 @@ def generate_content(system_prompt, dry_run=False):
     client = anthropic.Anthropic()
     resp = client.messages.create(
         model="claude-sonnet-5",
-        max_tokens=4000,
+        max_tokens=8000,
         messages=[{"role": "user", "content": system_prompt}],
     )
     text = "".join(b.text for b in resp.content if b.type == "text")
     text = text.strip()
+
+    if resp.stop_reason == "max_tokens":
+        raise RuntimeError(
+            "AI 응답이 max_tokens(8000)에서 잘렸습니다 — JSON이 완성되지 못했습니다. "
+            "destinations 개수가 많거나 사업부 자료가 길 때 발생할 수 있습니다. "
+            "max_tokens를 더 늘리거나, 스타일 규칙에서 문장 길이를 줄이도록 지시하세요.\n"
+            f"응답 마지막 300자: ...{text[-300:]}"
+        )
+
     if text.startswith("```"):
         text = text.split("```")[1]
         if text.startswith("json"):
             text = text[4:]
-    return json.loads(text)
+        text = text.strip()
+
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as e:
+        # 어디서 깨졌는지 앞뒤 맥락을 보여줘서 디버깅 가능하게 함
+        start = max(0, e.pos - 150)
+        end = min(len(text), e.pos + 150)
+        raise RuntimeError(
+            f"AI 응답을 JSON으로 파싱하는 데 실패했습니다: {e}\n"
+            f"문제 지점 근처 텍스트:\n...{text[start:end]}..."
+        ) from e
