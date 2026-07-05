@@ -71,7 +71,26 @@ if uploaded and st.button("생성하기", type="primary"):
             st.stop()
 
         ok_count = sum(1 for _, r in log if r == "OK")
+        leak_entries = [(k, v) for k, v in log if "LEAK CHECK" in k]
+
         st.success(f"PPTX 조립 완료! ({ok_count}/{len(log)} 필드 반영)")
+
+        if leak_entries:
+            st.warning(
+                f"⚠️ 아직 매핑되지 않아 이전 템플릿 원본 내용이 남아있는 도형이 "
+                f"{len(leak_entries)}개 있습니다. 다운로드한 파일에서 해당 부분은 "
+                f"직접 확인/수정이 필요합니다."
+            )
+            with st.expander(f"⚠️ 누수 상세 내역 ({len(leak_entries)}건)", expanded=True):
+                for k, v in leak_entries:
+                    st.text(f"{k}\n  → {v}")
+        else:
+            st.info("✅ 누수 검사 통과 — 이전 템플릿 원본 내용이 남아있는 도형이 없습니다.")
+
+        with st.expander("조립 로그 전체 보기 (필드별 반영 결과)"):
+            for k, v in log:
+                st.text(f"{k} -> {v}")
+
         with open(out_path, "rb") as f:
             st.download_button("📥 PPTX 다운로드", f, file_name=f"{writer_style}_{category}_기획안.pptx")
 
