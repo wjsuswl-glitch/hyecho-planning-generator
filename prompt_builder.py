@@ -59,6 +59,29 @@ SCHEMA_HINTS = {
   "cover": {"tagline": str, "subtitle": str, "intro_copy": str},
   "why_hyecho": {"title": str, "points": [str, str, str, str]}
 }""",
+    "박소설": """{
+  "cover": {
+    "headline": str, "subtitle": str, "intro_copy": str,
+    "design_direction_text": str
+  },
+  "route_stops": [str],
+  "why_we_stand_out": {"title": str, "description": str},
+  "highlight_reasons": [ {"title": str, "description": str} ],
+  "why_hyecho": {"section_title": str},
+  "why_hyecho_points": [ {"title": str, "description": str} ],
+  "season": {"title": str, "content": str, "disclaimer": str}
+}
+※ cover.headline: 2줄 — 1줄은 태그라인, 2줄은 실제 상품명 (줄바꿈으로 구분)
+※ cover.design_direction_text: 디자이너에게 보내는 톤앤매너 지시문 전체를 완성된 문장으로
+  작성하세요. "안녕하세요. [상품명] 디자인 건입니다." 인사로 시작해서
+  "톤앤매너: ...", "색상: ...", "키워드: ..." 형식을 포함하세요.
+※ route_stops: 여정 경유지 이름을 실제 순서대로, 있는 만큼만 배열로 작성하세요.
+  (슬롯은 8개까지 있지만 실제 경유지가 5개면 5개만 쓰세요. 부족한 슬롯은 자동 삭제됩니다.)
+※ highlight_reasons: 정확히 2개 (표지에 들어가는 상품 핵심 매력 포인트)
+※ why_hyecho_points: 정확히 4개 (브랜드 신뢰 포인트 4가지 — 난이도/편의/노쇼핑노옵션/전문성 등)
+※ season.disclaimer: 계절 정보 아래 들어가는 아주 작은 단서 문구 (예: "*평균 수치이며 실제와 차이가 있을 수 있습니다.")
+※ 아직 지원하지 않는 필드: 목적지별 상세 소개, 숙박(롯지) 정보, 지도 상세 — 이 스키마에 없는
+  내용은 생성하지 마세요. (다음 업데이트에서 추가될 예정입니다)""",
 }
 
 DESTINATIONS_RULE = (
