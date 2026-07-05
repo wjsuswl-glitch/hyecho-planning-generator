@@ -408,5 +408,244 @@
       "벵골",
       "맹그로브"
     ]
+  },
+  "박소설": {
+    "template": "templates/박소설_템플릿.pptx",
+    "field_map": {
+      "cover.headline": [
+        [
+          0,
+          26
+        ],
+        [
+          5,
+          13
+        ],
+        [
+          5,
+          17
+        ],
+        [
+          5,
+          21
+        ],
+        [
+          5,
+          22
+        ]
+      ],
+      "cover.subtitle": [
+        0,
+        7
+      ],
+      "cover.intro_copy": [
+        0,
+        22
+      ],
+      "cover.design_direction_text": [
+        0,
+        44
+      ],
+      "why_we_stand_out.title": [
+        0,
+        73
+      ],
+      "why_we_stand_out.description": [
+        0,
+        74
+      ],
+      "why_hyecho.section_title": [
+        4,
+        39
+      ],
+      "season.title": [
+        4,
+        34
+      ],
+      "season.content": [
+        4,
+        35
+      ],
+      "season.disclaimer": [
+        4,
+        5
+      ]
+    },
+    "repeatable_groups": {
+      "route_stops": {
+        "slots": [
+          {
+            "shape": [
+              0,
+              29
+            ]
+          },
+          {
+            "shape": [
+              0,
+              34
+            ]
+          },
+          {
+            "shape": [
+              0,
+              38
+            ]
+          },
+          {
+            "shape": [
+              0,
+              40
+            ]
+          },
+          {
+            "shape": [
+              0,
+              42
+            ]
+          },
+          {
+            "shape": [
+              0,
+              45
+            ]
+          },
+          {
+            "shape": [
+              0,
+              47
+            ]
+          },
+          {
+            "shape": [
+              0,
+              49
+            ]
+          }
+        ]
+      },
+      "highlight_reasons": {
+        "slots": [
+          {
+            "fields": {
+              "title": [
+                0,
+                75
+              ],
+              "description": [
+                0,
+                9
+              ]
+            }
+          },
+          {
+            "fields": {
+              "title": [
+                0,
+                76
+              ],
+              "description": [
+                0,
+                77
+              ]
+            }
+          }
+        ]
+      },
+      "why_hyecho_points": {
+        "slots": [
+          {
+            "fields": {
+              "title": [
+                4,
+                24
+              ],
+              "description": [
+                4,
+                25
+              ]
+            }
+          },
+          {
+            "fields": {
+              "title": [
+                4,
+                37
+              ],
+              "description": [
+                4,
+                41
+              ]
+            }
+          },
+          {
+            "fields": {
+              "title": [
+                4,
+                45
+              ],
+              "description": [
+                4,
+                46
+              ]
+            }
+          },
+          {
+            "fields": {
+              "title": [
+                4,
+                50
+              ],
+              "description": [
+                4,
+                51
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "always_strip_shapes": [
+      [
+        1,
+        95
+      ],
+      [
+        1,
+        96
+      ],
+      [
+        1,
+        97
+      ],
+      [
+        1,
+        98
+      ]
+    ],
+    "optional_slides": [
+      {
+        "requires_field": "lodging",
+        "slide_idx": 1
+      }
+    ],
+    "leak_check_terms": [
+      "네팔",
+      "히말라야",
+      "포카라",
+      "카트만두",
+      "안나푸르나",
+      "마차푸차레",
+      "에베레스트",
+      "치트완",
+      "담푸스",
+      "사랑콧",
+      "나가르콧",
+      "나모부다",
+      "반디푸르",
+      "파탄",
+      "Nepal",
+      "Himalaya"
+    ]
   }
 }
