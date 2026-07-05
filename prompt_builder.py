@@ -21,6 +21,36 @@ STYLE_RULES = {
 LAYOUT_HINT = {"박소설": "separate", "신윤정": "combined", "정현지": "separate"}
 BANNER_MAP_INCLUDE = {"박소설": True, "신윤정": True, "정현지": False}
 
+# template_map.json의 field_map / repeatable_groups와 1:1로 맞춘 스키마.
+# 여기가 template_map.json과 어긋나면 assembler.py에서 "NO DATA"만 계속 쌓인다 —
+# 필드를 추가/삭제할 땐 반드시 template_map.json도 같이 바꿀 것.
+SCHEMA_HINTS = {
+    "정현지": """{
+  "cover": {"tagline": str, "product_name": str, "region_tag": str, "subtitle": str, "intro_copy": str},
+  "brand_tagline": str,
+  "brand_points": [str, str],
+  "watermark_label": str,   // 표지 우하단에 작게 들어가는 영문 1~2단어 (여정/지역명)
+  "why_hyecho": {
+    "title": str, "subtitle1": str, "subtitle2": str,
+    "badge": str, "section_title": str, "theme_line": str
+  },
+  "destinations": [ {"title": str, "description": str}, ... ],
+  "season": {"title": str, "content": str}
+}""",
+    "신윤정": """{
+  "cover": {"tagline": str, "subtitle": str, "intro_copy": str},
+  "why_hyecho": {"title": str, "points": [str, str, str, str]}
+}""",
+}
+
+DESTINATIONS_RULE = (
+    "[destinations 배열 규칙]\n"
+    "destinations는 실제 입력에 실제로 등장하는 경유지/명소 개수만큼만 생성하세요.\n"
+    "예를 들어 하이라이트가 3곳이면 정확히 3개만 만드세요. 템플릿에 슬롯이 몇 개 있든 "
+    "상관없이, 있지도 않은 경유지를 지어내서 슬롯을 채우면 안 됩니다. "
+    "부족한 슬롯은 조립 단계에서 자동으로 삭제됩니다."
+)
+
 def load_fewshot_examples(writer_style, category, k=3):
     with open(FEWSHOT_PATH, encoding="utf-8") as f:
         all_examples = json.load(f)
@@ -70,7 +100,10 @@ why_hyecho와 season 섹션은 {"같은 슬라이드에 합쳐서" if LAYOUT_HIN
 
 [출력 형식]
 반드시 JSON으로만 응답하세요. 다른 텍스트를 포함하지 마세요.
-스키마: cover(tagline, product_name, intro_copy), sections[](type, items), why_hyecho(title, points[]), season(title, content)
+스키마 (이 구조를 정확히 따르세요. 필드를 빼거나 이름을 바꾸지 마세요):
+{SCHEMA_HINTS.get(writer_style, "(스키마 미정의 — 담당자에게 문의)")}
+
+{DESTINATIONS_RULE if "destinations" in SCHEMA_HINTS.get(writer_style, "") else ""}
 
 [Few-shot 예시 {len(examples)}개 — 문체·구조 참고 전용]
 아래 예시들은 전혀 다른 여행 상품(지명, 코스, 하이라이트 등)에 대한 과거 결과물입니다.
