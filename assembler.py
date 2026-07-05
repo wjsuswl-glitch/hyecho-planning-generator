@@ -80,6 +80,20 @@ def _scan_for_leaks(prs, leak_terms):
     return leaks
 
 
+def _delete_slide(prs, slide_idx):
+    """슬라이드 하나를 통째로 삭제한다 (예: 숙박 정보가 없는 사업부 자료일 때
+    숙박 소개 슬라이드 자체를 제거). python-pptx는 슬라이드 삭제를 공식 지원하지
+    않아 내부 XML을 직접 조작한다."""
+    xml_slides = prs.slides._sldIdLst
+    slides = list(xml_slides)
+    if slide_idx >= len(slides):
+        return False
+    rId = slides[slide_idx].rId
+    prs.part.drop_rel(rId)
+    xml_slides.remove(slides[slide_idx])
+    return True
+
+
 def assemble(content_json, writer_style, template_map_path, out_path):
     with open(template_map_path, encoding="utf-8") as f:
         tmap = json.load(f)[writer_style]
@@ -88,7 +102,7 @@ def assemble(content_json, writer_style, template_map_path, out_path):
     log = []
 
     # 1) 단일 필드 매핑 (표지, why_hyecho 등 — 기존 로직)
-    for field_path, (slide_idx, shape_id) in tmap.get("field_map", {}).items():
+    for field_path, target in tmap.get("field_map", {}).items():
         value = _get_nested(content_json, field_path)
         if value is None:
             log.append((field_path, "NO DATA"))
@@ -98,8 +112,13 @@ def assemble(content_json, writer_style, template_map_path, out_path):
             value = "\n".join(str(v) for v in value.values())
         elif isinstance(value, list):
             value = "\n".join(str(v) for v in value)
-        result = _set_text(prs.slides[slide_idx], shape_id, value)
-        log.append((field_path, result))
+
+        # target이 [slide,shape] 하나면 단일 타겟, [[slide,shape],...]면 같은 값을
+        # 여러 도형에 동시에 채운다 (예: 배너 슬라이드가 표지 헤드라인을 재사용)
+        targets = target if isinstance(target[0], list) else [target]
+        for slide_idx, shape_id in targets:
+            result = _set_text(prs.slides[slide_idx], shape_id, value)
+            log.append((field_path, result))
 
     # 2) 반복 슬롯 그룹 (목적지 목록, 경유지 라벨 등 — 실제 개수가
     #    템플릿 슬롯 수보다 적으면 남는 슬롯의 도형을 통째로 삭제한다)
@@ -145,6 +164,31 @@ def assemble(content_json, writer_style, template_map_path, out_path):
                     label = f"{group_name}[{i}].{field_name}(초과 슬롯)"
                     deleted = _delete_shape(prs.slides[slide_idx], shape_id)
                     log.append((label, "DELETED" if deleted else "DELETE_FAILED(shape not found)"))
+
+    # 3) 항상 제거해야 하는 도형 (예: 실제 고객 후기 인용 — 새 지역엔 아직
+    #    실제 다녀온 고객이 없으므로 AI가 절대 지어내면 안 됨. 데이터 유무와
+    #    무관하게 매번 제거)
+    for slide_idx, shape_id in tmap.get("always_strip_shapes", []):
+        deleted = _delete_shape(prs.slides[slide_idx], shape_id)
+        log.append((f"always_strip[slide{slide_idx}/shape{shape_id}]",
+                    "DELETED" if deleted else "DELETE_FAILED(shape not found)"))
+
+    # 4) 조건부 슬라이드 삭제 (예: 숙박 정보 없으면 숙박 소개 슬라이드 전체 삭제)
+    #    반드시 다른 모든 인덱스 기반 작업이 끝난 뒤, 맨 마지막에, 슬라이드 번호가
+    #    큰 순서대로 처리한다 — 삭제하면 뒤 슬라이드 인덱스가 앞당겨지기 때문.
+    optional_slides = sorted(
+        tmap.get("optional_slides", []), key=lambda s: s["slide_idx"], reverse=True
+    )
+    for spec in optional_slides:
+        value = content_json.get(spec["requires_field"])
+        has_data = bool(value)
+        if not has_data:
+            deleted = _delete_slide(prs, spec["slide_idx"])
+            log.append((f"optional_slide[{spec['requires_field']}]",
+                        f"슬라이드 {spec['slide_idx']} 삭제됨 (데이터 없음)" if deleted
+                        else "DELETE_FAILED"))
+        else:
+            log.append((f"optional_slide[{spec['requires_field']}]", "유지 (데이터 있음)"))
 
     prs.save(out_path)
 
