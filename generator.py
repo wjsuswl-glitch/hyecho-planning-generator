@@ -12,7 +12,7 @@ def generate_content(system_prompt, dry_run=False):
     import anthropic
     client = anthropic.Anthropic()
     resp = client.messages.create(
-        model="claude-sonnet-4-6",
+        model="claude-sonnet-5",
         max_tokens=4000,
         messages=[{"role": "user", "content": system_prompt}],
     )
