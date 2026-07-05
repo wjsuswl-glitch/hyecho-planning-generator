@@ -410,7 +410,7 @@
     ]
   },
   "박소설": {
-    "template": "templates/박소설_템플릿.pptx",
+    "template": "templates/park_soseol_template.pptx",
     "field_map": {
       "cover.headline": [
         [
