@@ -1,6 +1,6 @@
 {
   "정현지": {
-    "template": "/Users/yondi/Desktop/자동화_프로토타입/안데스_템플릿.pptx",
+    "template": "templates/안데스_템플릿.pptx",
     "field_map": {
       "cover.tagline": [0, 5],
       "cover.product_name": [0, 6],
@@ -12,7 +12,7 @@
     }
   },
   "신윤정": {
-    "template": "/Users/yondi/Desktop/자동화_프로토타입/방글라데시_템플릿.pptx",
+    "template": "templates/방글라데시_템플릿.pptx",
     "field_map": {
       "cover.tagline": [0, 5],
       "cover.subtitle": [0, 39],

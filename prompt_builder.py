@@ -1,7 +1,8 @@
 """few-shot 예시 선택 + 시스템 프롬프트 조립 모듈"""
 import json
 
-FEWSHOT_PATH = "/Users/yondi/Desktop/기획안/fewshot_examples.json"
+import os
+FEWSHOT_PATH = os.path.join(os.path.dirname(__file__), "data", "fewshot_examples.json")
 
 STYLE_RULES = {
     "박소설": "문학적·서정적 문체, 형용사와 비유를 적극 활용. 표지에 Design Direction(톤앤매너/색상/키워드)을 명시.",

@@ -1,11 +1,12 @@
 """전체 파이프라인: 사업부 자료(docx) → 파싱 → 프롬프트 → (AI 생성) → PPTX 조립"""
+import os
 import sys, json, argparse
 from parser import parse_docx, detect_format_and_draft_copy
 from prompt_builder import build_system_prompt
 from generator import generate_content
 from assembler import assemble
 
-TEMPLATE_MAP_PATH = "/Users/yondi/Desktop/자동화_프로토타입/pipeline/template_map.json"
+TEMPLATE_MAP_PATH = os.path.join(os.path.dirname(__file__), "template_map.json")
 
 def run(docx_path, writer_style, category, out_path, dry_run=False, manual_json=None):
     print(f"[1/4] 파싱: {docx_path}")
