@@ -113,6 +113,10 @@
       "theme_categories_intro": [
         1,
         30
+      ],
+      "season.stat_line": [
+        3,
+        28
       ]
     },
     "repeatable_groups": {
@@ -351,7 +355,11 @@
       "우로스",
       "잉카",
       "케추아",
-      "Andes"
+      "Andes",
+      "남미",
+      "South America",
+      "안데스산맥",
+      "중앙 안데스"
     ]
   },
   "신윤정": {
