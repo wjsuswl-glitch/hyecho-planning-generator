@@ -2,26 +2,239 @@
   "정현지": {
     "template": "templates/안데스_템플릿.pptx",
     "field_map": {
-      "cover.tagline": [0, 5],
-      "cover.product_name": [0, 6],
-      "cover.intro_copy": [0, 10],
-      "why_hyecho.points.0": [1, 40],
-      "why_hyecho.points.1": [1, 42],
-      "season.title": [3, 25],
-      "season.content": [3, 29]
+      "cover.tagline": [
+        0,
+        5
+      ],
+      "cover.product_name": [
+        0,
+        6
+      ],
+      "cover.region_tag": [
+        0,
+        7
+      ],
+      "cover.subtitle": [
+        0,
+        9
+      ],
+      "cover.intro_copy": [
+        0,
+        10
+      ],
+      "brand_tagline": [
+        0,
+        32
+      ],
+      "brand_points.0": [
+        0,
+        40
+      ],
+      "brand_points.1": [
+        0,
+        43
+      ],
+      "watermark_label": [
+        0,
+        50
+      ],
+      "why_hyecho.title": [
+        1,
+        8
+      ],
+      "why_hyecho.subtitle1": [
+        1,
+        9
+      ],
+      "why_hyecho.subtitle2": [
+        1,
+        10
+      ],
+      "why_hyecho.badge": [
+        1,
+        13
+      ],
+      "why_hyecho.section_title": [
+        1,
+        17
+      ],
+      "why_hyecho.theme_line": [
+        1,
+        20
+      ],
+      "season.title": [
+        3,
+        25
+      ],
+      "season.content": [
+        3,
+        29
+      ]
+    },
+    "repeatable_groups": {
+      "destinations": {
+        "slots": [
+          {
+            "fields": {
+              "title": [
+                1,
+                50
+              ],
+              "description": [
+                2,
+                4
+              ]
+            }
+          },
+          {
+            "fields": {
+              "title": [
+                2,
+                5
+              ],
+              "description": [
+                2,
+                10
+              ]
+            }
+          },
+          {
+            "fields": {
+              "title": [
+                2,
+                15
+              ],
+              "description": [
+                2,
+                16
+              ]
+            },
+            "extra_shapes": [
+              [
+                2,
+                17
+              ],
+              [
+                2,
+                18
+              ]
+            ]
+          },
+          {
+            "fields": {
+              "title": [
+                2,
+                19
+              ],
+              "description": [
+                2,
+                20
+              ]
+            },
+            "extra_shapes": [
+              [
+                2,
+                21
+              ],
+              [
+                2,
+                24
+              ]
+            ]
+          },
+          {
+            "fields": {
+              "title": [
+                2,
+                25
+              ],
+              "description": [
+                2,
+                27
+              ]
+            }
+          },
+          {
+            "fields": {
+              "title": [
+                3,
+                10
+              ],
+              "description": [
+                3,
+                12
+              ]
+            },
+            "extra_shapes": [
+              [
+                3,
+                9
+              ]
+            ]
+          },
+          {
+            "fields": {
+              "title": [
+                3,
+                17
+              ],
+              "description": [
+                3,
+                18
+              ]
+            }
+          },
+          {
+            "fields": {
+              "title": [
+                3,
+                20
+              ],
+              "description": [
+                3,
+                21
+              ]
+            }
+          }
+        ]
+      }
     }
   },
   "신윤정": {
     "template": "templates/방글라데시_템플릿.pptx",
     "field_map": {
-      "cover.tagline": [0, 5],
-      "cover.subtitle": [0, 39],
-      "cover.intro_copy": [0, 34],
-      "why_hyecho.title": [6, 11],
-      "why_hyecho.points.0": [6, 15],
-      "why_hyecho.points.1": [6, 16],
-      "why_hyecho.points.2": [6, 22],
-      "why_hyecho.points.3": [6, 27]
+      "cover.tagline": [
+        0,
+        5
+      ],
+      "cover.subtitle": [
+        0,
+        39
+      ],
+      "cover.intro_copy": [
+        0,
+        34
+      ],
+      "why_hyecho.title": [
+        6,
+        11
+      ],
+      "why_hyecho.points.0": [
+        6,
+        15
+      ],
+      "why_hyecho.points.1": [
+        6,
+        16
+      ],
+      "why_hyecho.points.2": [
+        6,
+        22
+      ],
+      "why_hyecho.points.3": [
+        6,
+        27
+      ]
     }
   }
 }
