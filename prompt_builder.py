@@ -29,14 +29,17 @@ SCHEMA_HINTS = {
   "cover": {"tagline": str, "product_name": str, "region_tag": str, "subtitle": str, "intro_copy": str},
   "brand_tagline": str,
   "brand_points": [str, str],
-  "watermark_label": str,   // 표지 우하단에 작게 들어가는 영문 1~2단어 (여정/지역명)
+  "watermark_label": str,
   "why_hyecho": {
     "title": str, "subtitle1": str, "subtitle2": str,
     "badge": str, "section_title": str, "theme_line": str
   },
-  "destinations": [ {"title": str, "description": str}, ... ],
+  "destinations": [ {"title": str, "description": str} ],
   "season": {"title": str, "content": str}
-}""",
+}
+※ watermark_label: 표지 우하단에 작게 들어가는 영문 1~2단어 (여정/지역명)
+※ destinations: 위 예시는 배열 안에 원소 1개만 보여준 것입니다. 실제로는
+  {"title": str, "description": str} 형태의 원소를 실제 입력에 있는 개수만큼 반복하세요.""",
     "신윤정": """{
   "cover": {"tagline": str, "subtitle": str, "intro_copy": str},
   "why_hyecho": {"title": str, "points": [str, str, str, str]}
