@@ -51,15 +51,24 @@ if uploaded and st.button("생성하기", type="primary"):
     if not has_api_key:
         st.info("API 키가 없어 여기서 멈춥니다. 위 프롬프트가 실제로 AI에게 전달될 내용이에요.")
     else:
-        with st.spinner("AI 카피 생성 중..."):
-            content = generate_content(prompt)
+        try:
+            with st.spinner("AI 카피 생성 중..."):
+                content = generate_content(prompt)
+        except Exception as e:
+            st.error(f"AI 콘텐츠 생성 중 오류가 발생했습니다:\n\n{e}")
+            st.stop()
+
         st.success("생성 완료!")
         with st.expander("생성된 JSON 보기"):
             st.json(content)
 
-        with st.spinner("PPTX 조립 중..."):
-            out_path = tmp_path.replace(".docx", "_결과.pptx")
-            log = assemble(content, writer_style, TEMPLATE_MAP_PATH, out_path)
+        try:
+            with st.spinner("PPTX 조립 중..."):
+                out_path = tmp_path.replace(".docx", "_결과.pptx")
+                log = assemble(content, writer_style, TEMPLATE_MAP_PATH, out_path)
+        except Exception as e:
+            st.error(f"PPTX 조립 중 오류가 발생했습니다:\n\n{e}")
+            st.stop()
 
         ok_count = sum(1 for _, r in log if r == "OK")
         st.success(f"PPTX 조립 완료! ({ok_count}/{len(log)} 필드 반영)")
