@@ -11,7 +11,7 @@ from assembler import assemble
 TEMPLATE_MAP_PATH = os.path.join(os.path.dirname(__file__), "template_map.json")
 
 st.set_page_config(page_title="혜초 기획안 자동생성", page_icon="🧳")
-st.title("🧳 혜초여행 기획안 자동생성 (프로토타입)")
+st.title("🧳 혜초여행 기획안 자동생성")
 st.caption("사업부 원본자료(docx) → AI 카피 생성 → 기획안 PPTX")
 
 with open(TEMPLATE_MAP_PATH, encoding="utf-8") as f:
