@@ -65,11 +65,15 @@ SCHEMA_HINTS = {
     "design_direction_text": str
   },
   "route_stops": [str],
+  "route_overview_title": str,
   "why_we_stand_out": {"title": str, "description": str},
   "highlight_reasons": [ {"title": str, "description": str} ],
   "why_hyecho": {"section_title": str},
   "why_hyecho_points": [ {"title": str, "description": str} ],
-  "season": {"title": str, "content": str, "disclaimer": str}
+  "season": {"title": str, "content": str, "disclaimer": str},
+  "destinations": [ {"title": str, "description": str, "stat_line": str} ],
+  "hiking_overview": {"tagline": str, "title": str, "summary_list": str},
+  "map_labels": [str]
 }
 ※ cover.headline: 2줄 — 1줄은 태그라인, 2줄은 실제 상품명 (줄바꿈으로 구분)
 ※ cover.design_direction_text: 디자이너에게 보내는 톤앤매너 지시문 전체를 완성된 문장으로
@@ -77,11 +81,22 @@ SCHEMA_HINTS = {
   "톤앤매너: ...", "색상: ...", "키워드: ..." 형식을 포함하세요.
 ※ route_stops: 여정 경유지 이름을 실제 순서대로, 있는 만큼만 배열로 작성하세요.
   (슬롯은 8개까지 있지만 실제 경유지가 5개면 5개만 쓰세요. 부족한 슬롯은 자동 삭제됩니다.)
+※ route_overview_title: 경유지 라벨들 위에 들어가는 섹션 제목 (예: "한 눈에 보는 OOO 여정")
 ※ highlight_reasons: 정확히 2개 (표지에 들어가는 상품 핵심 매력 포인트)
 ※ why_hyecho_points: 정확히 4개 (브랜드 신뢰 포인트 4가지 — 난이도/편의/노쇼핑노옵션/전문성 등)
 ※ season.disclaimer: 계절 정보 아래 들어가는 아주 작은 단서 문구 (예: "*평균 수치이며 실제와 차이가 있을 수 있습니다.")
-※ 아직 지원하지 않는 필드: 목적지별 상세 소개, 숙박(롯지) 정보, 지도 상세 — 이 스키마에 없는
-  내용은 생성하지 마세요. (다음 업데이트에서 추가될 예정입니다)""",
+※ destinations: 목적지/코스 소개 항목입니다. 실제 입력에 있는 개수만큼만 작성하세요
+  (슬롯은 10개까지 있지만 실제로 4개면 4개만). 순서는 상관없습니다.
+  stat_line: 하이킹/트레킹 코스처럼 "거리: 약Xkm / 소요시간: 약X시간" 형태 정보가 있는
+  항목에만 채우고, 지역 소개처럼 해당 없으면 빈 문자열로 두세요.
+※ map_labels: 지도에 표시할 지역명 (최대 4개, 실제 있는 만큼만). "지역명\\n-핵심 포인트" 형태로
+  줄바꿈 포함해서 작성하세요 (예: "캉딩\\n-첫 관문").
+※ hiking_overview: destinations 중 "코스"(stat_line이 있는 항목)들을 요약하는 섹션입니다.
+  tagline: 짧은 도입 문구 (예: "OOO의 아름다운 대자연으로 떠나요")
+  title: 소제목 (예: "총 N번의 가벼운 하이킹으로 만나는 / OOO의 대자연")
+  summary_list: "하나! 코스명   약X시간 소요\\n둘! 코스명   약X시간 소요..." 형태로,
+  destinations 중 stat_line이 있는 코스들만 번호를 매겨 나열하세요.
+※ 아직 지원하지 않는 필드: 숙박(롯지) 정보 — 이 스키마에 없는 내용은 생성하지 마세요.""",
 }
 
 DESTINATIONS_RULE = (
