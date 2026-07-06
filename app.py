@@ -7,6 +7,7 @@ from parser import parse_docx, detect_format_and_draft_copy
 from prompt_builder import build_system_prompt
 from generator import generate_content
 from assembler import assemble
+import builder as dynamic_builder
 
 TEMPLATE_MAP_PATH = os.path.join(os.path.dirname(__file__), "template_map.json")
 
@@ -65,7 +66,12 @@ if uploaded and st.button("생성하기", type="primary"):
         try:
             with st.spinner("PPTX 조립 중..."):
                 out_path = tmp_path.replace(".docx", "_결과.pptx")
-                log = assemble(content, writer_style, TEMPLATE_MAP_PATH, out_path)
+                if writer_style == "정현지":
+                    # v2: 옛 기획안을 열어 덮어쓰지 않고, 매번 새로 슬라이드를 생성
+                    dynamic_builder.build(content, out_path)
+                    log = [("dynamic_build", "OK — 새 슬라이드로 생성됨 (템플릿 재사용 없음)")]
+                else:
+                    log = assemble(content, writer_style, TEMPLATE_MAP_PATH, out_path)
         except Exception as e:
             st.error(f"PPTX 조립 중 오류가 발생했습니다:\n\n{e}")
             st.stop()
