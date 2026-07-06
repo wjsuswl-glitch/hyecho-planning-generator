@@ -135,37 +135,11 @@ def build_cover_slide(prs, cover, watermark_label=""):
     add_text(slide, MARGIN, y, CONTENT_W, intro_h, cover.get("intro_copy", ""),
               size=12, color=MUTED_COLOR, align=PP_ALIGN.CENTER)
     if watermark_label:
-        add_text(slide, SLIDE_W - Inches(1.5), Inches(0.3), Inches(1.1), Inches(0.3),
+        add_text(slide, SLIDE_W - Inches(1.5), Inches(0.15), Inches(1.1), Inches(0.3),
                   watermark_label, size=11, bold=True, color=RGBColor(0xCC, 0xB0, 0x00),
                   align=PP_ALIGN.RIGHT)
     return slide
 
-
-def build_brand_slide(prs, brand_tagline, brand_points, why_hyecho):
-    slide = _blank_slide(prs)
-    y = Inches(0.4)
-    if brand_tagline:
-        add_text(slide, MARGIN, y, CONTENT_W, Inches(0.5), brand_tagline,
-                  size=16, bold=True, align=PP_ALIGN.CENTER)
-        y += Inches(0.6)
-    for point in (brand_points or []):
-        h = estimate_text_height(point, 13, CONTENT_W)
-        add_text(slide, MARGIN, y, CONTENT_W, h, f"· {point}", size=13)
-        y += h + Inches(0.1)
-    y += Inches(0.2)
-    if why_hyecho:
-        add_section_bar(slide, y, why_hyecho.get("section_title", "혜초와 함께라면"))
-        y += Inches(0.6)
-        if why_hyecho.get("subtitle1"):
-            add_text(slide, MARGIN, y, CONTENT_W, Inches(0.35), why_hyecho["subtitle1"], size=13)
-            y += Inches(0.4)
-        if why_hyecho.get("subtitle2"):
-            add_text(slide, MARGIN, y, CONTENT_W, Inches(0.35), why_hyecho["subtitle2"], size=13)
-            y += Inches(0.4)
-        if why_hyecho.get("badge"):
-            add_text(slide, MARGIN, y, CONTENT_W, Inches(0.35), why_hyecho["badge"],
-                      size=13, bold=True, color=ACCENT_COLOR)
-    return slide
 
 
 def build_destination_slides(prs, destinations, section_title=None, theme_line=None, per_slide=None):
@@ -223,20 +197,204 @@ def build_destination_slides(prs, destinations, section_title=None, theme_line=N
     return slides
 
 
-def build_season_slide(prs, season):
+def build_background_slide(prs, background_story):
+    """'차마고도란?' 같은 배경 이야기 슬라이드"""
+    if not background_story:
+        return None
+    slide = _blank_slide(prs)
+    y = Inches(0.4)
+    if background_story.get("kicker"):
+        add_text(slide, MARGIN, y, CONTENT_W, Inches(0.35), background_story["kicker"],
+                  size=13, color=MUTED_COLOR, align=PP_ALIGN.CENTER)
+        y += Inches(0.4)
+    if background_story.get("title"):
+        add_text(slide, MARGIN, y, CONTENT_W, Inches(0.5), background_story["title"],
+                  size=20, bold=True, align=PP_ALIGN.CENTER)
+        y += Inches(0.55)
+    content = background_story.get("content", "")
+    h = estimate_text_height(content, 12, CONTENT_W)
+    add_text(slide, MARGIN, y, CONTENT_W, h, content, size=12, align=PP_ALIGN.CENTER)
+    return slide
+
+
+def build_reasons_slide(prs, why_reasons):
+    """'왜 사천성인가' 같은 이유 N가지 슬라이드"""
+    if not why_reasons:
+        return None
+    slide = _blank_slide(prs)
+    y = Inches(0.4)
+    for reason in why_reasons:
+        title_h = estimate_text_height(reason.get("title", ""), 15, CONTENT_W, bold=True)
+        add_text(slide, MARGIN, y, CONTENT_W, title_h, reason.get("title", ""),
+                  size=15, bold=True, color=ACCENT_COLOR, align=PP_ALIGN.CENTER)
+        y += title_h + Inches(0.1)
+        content_h = estimate_text_height(reason.get("content", ""), 12, CONTENT_W)
+        add_text(slide, MARGIN, y, CONTENT_W, content_h, reason.get("content", ""),
+                  size=12, align=PP_ALIGN.CENTER)
+        y += content_h + Inches(0.35)
+    return slide
+
+
+def build_route_compare_slide(prs, route_compare):
+    """두 노선/코스를 비교하는 표 슬라이드"""
+    if not route_compare or not route_compare.get("routes"):
+        return None
+    slide = _blank_slide(prs)
+    y = Inches(0.4)
+    if route_compare.get("title"):
+        add_section_bar(slide, y, route_compare["title"])
+        y += Inches(0.6)
+    routes = route_compare["routes"]
+    col_w = CONTENT_W / len(routes)
+    criteria = ["course", "scenery", "appeal", "summary"]
+    criteria_label = {"course": "코스", "scenery": "풍경", "appeal": "매력", "summary": "한줄 요약"}
+    row_h = Inches(0.9)
+    for ri, route in enumerate(routes):
+        x = MARGIN + col_w * ri
+        add_text(slide, x, y, col_w, Inches(0.4), route.get("name", ""), size=14, bold=True,
+                  align=PP_ALIGN.CENTER, color=ACCENT_COLOR)
+    y += Inches(0.5)
+    for crit in criteria:
+        for ri, route in enumerate(routes):
+            x = MARGIN + col_w * ri
+            val = route.get(crit, "")
+            add_text(slide, x, y, col_w, row_h, f"[{criteria_label[crit]}]\n{val}", size=10,
+                      align=PP_ALIGN.CENTER)
+        y += row_h
+    return slide
+
+
+def build_experience_slide(prs, brand_tagline, brand_points, experience_points):
+    """브랜드 소구 + 경험 포인트(아이콘 카드 N개)"""
+    slide = _blank_slide(prs)
+    y = Inches(0.4)
+    if brand_tagline:
+        h = estimate_text_height(brand_tagline, 16, CONTENT_W, bold=True)
+        add_text(slide, MARGIN, y, CONTENT_W, h, brand_tagline, size=16, bold=True,
+                  align=PP_ALIGN.CENTER)
+        y += h + Inches(0.2)
+    for point in (brand_points or []):
+        h = estimate_text_height(point, 13, CONTENT_W)
+        add_text(slide, MARGIN, y, CONTENT_W, h, f"· {point}", size=13)
+        y += h + Inches(0.1)
+    y += Inches(0.3)
+    if experience_points:
+        col_w = CONTENT_W / len(experience_points)
+        for i, ep in enumerate(experience_points):
+            x = MARGIN + col_w * i
+            add_image_placeholder(slide, x + Inches(0.05), y, col_w - Inches(0.1), Inches(0.7), "아이콘")
+        y += Inches(0.85)
+        for i, ep in enumerate(experience_points):
+            x = MARGIN + col_w * i
+            th = estimate_text_height(ep.get("title", ""), 12, col_w - Inches(0.1), bold=True)
+            add_text(slide, x, y, col_w - Inches(0.1), th, ep.get("title", ""), size=12,
+                      bold=True, align=PP_ALIGN.CENTER)
+        y += Inches(0.4)
+        for i, ep in enumerate(experience_points):
+            x = MARGIN + col_w * i
+            dh = estimate_text_height(ep.get("description", ""), 10, col_w - Inches(0.1))
+            add_text(slide, x, y, col_w - Inches(0.1), dh, ep.get("description", ""), size=10,
+                      color=MUTED_COLOR, align=PP_ALIGN.CENTER)
+    return slide
+
+
+def build_highlights_slides(prs, highlights, heading=None):
+    """번호 매긴 여정 하이라이트 카드 (destinations와 별개 — 더 큰 테마 단위)"""
+    if not highlights:
+        return []
+    slides = []
+    bottom_limit = SLIDE_H - Inches(0.3)
+    idx = 0
+    first = True
+    while idx < len(highlights):
+        slide = _blank_slide(prs)
+        y = Inches(0.4)
+        if first and heading:
+            add_section_bar(slide, y, heading)
+            y += Inches(0.6)
+            first = False
+        placed_any = False
+        while idx < len(highlights):
+            item = highlights[idx]
+            num_label = f"{idx + 1:02d}"
+            title_h = estimate_text_height(item.get("title", ""), 14, CONTENT_W, bold=True)
+            image_h = Inches(1.5)
+            desc_h = estimate_text_height(item.get("description", ""), 11, CONTENT_W)
+            block_h = Inches(0.3) + title_h + Inches(0.1) + image_h + Inches(0.15) + desc_h + Inches(0.3)
+            if placed_any and y + block_h > bottom_limit:
+                break
+            add_text(slide, MARGIN, y, Inches(0.6), Inches(0.3), num_label, size=13, bold=True,
+                      color=ACCENT_COLOR)
+            y += Inches(0.35)
+            add_text(slide, MARGIN, y, CONTENT_W, title_h, item.get("title", ""), size=14, bold=True)
+            y += title_h + Inches(0.1)
+            add_image_placeholder(slide, MARGIN, y, CONTENT_W, image_h, "이미지")
+            y += image_h + Inches(0.15)
+            add_text(slide, MARGIN, y, CONTENT_W, desc_h, item.get("description", ""), size=11,
+                      color=MUTED_COLOR)
+            y += desc_h + Inches(0.3)
+            placed_any = True
+            idx += 1
+        slides.append(slide)
+    return slides
+
+
+def build_altitude_slide(prs, altitude_profile, altitude_faq):
+    """경유지 고도 프로필 + 고산증 관련 FAQ"""
+    if not altitude_profile and not altitude_faq:
+        return None
+    slide = _blank_slide(prs)
+    y = Inches(0.4)
+    if altitude_faq and altitude_faq.get("question"):
+        add_text(slide, MARGIN, y, CONTENT_W, Inches(0.4), altitude_faq["question"], size=15,
+                  bold=True, align=PP_ALIGN.CENTER)
+        y += Inches(0.5)
+        ans_h = estimate_text_height(altitude_faq.get("answer", ""), 12, CONTENT_W)
+        add_text(slide, MARGIN, y, CONTENT_W, ans_h, altitude_faq.get("answer", ""), size=12,
+                  align=PP_ALIGN.CENTER)
+        y += ans_h + Inches(0.35)
+    if altitude_profile:
+        add_text(slide, MARGIN, y, CONTENT_W, Inches(0.3),
+                  "구간별 고도 프로필 (자리표시 — 실제 그래픽은 디자이너 작업)",
+                  size=10, color=MUTED_COLOR, align=PP_ALIGN.CENTER)
+        y += Inches(0.4)
+        n = len(altitude_profile)
+        col_w = CONTENT_W / max(n, 1)
+        gap = Inches(0.06)
+        for i, stop in enumerate(altitude_profile):
+            x = MARGIN + col_w * i
+            add_image_placeholder(slide, x + gap, y, col_w - gap * 2, Inches(0.5), "숙박")
+        y += Inches(0.6)
+        for i, stop in enumerate(altitude_profile):
+            x = MARGIN + col_w * i
+            label = f"{stop.get('name','')}\n{stop.get('altitude','')}"
+            add_text(slide, x + gap, y, col_w - gap * 2, Inches(0.5), label, size=9, align=PP_ALIGN.CENTER)
+    return slide
+
+
+def build_season_slide(prs, season, season_table=None):
     slide = _blank_slide(prs)
     y = Inches(0.4)
     add_section_bar(slide, y, season.get("title", "언제 가면 좋을까?"))
     y += Inches(0.6)
     if season.get("stat_line"):
-        add_text(slide, MARGIN, y, CONTENT_W, Inches(0.4), season["stat_line"],
-                  size=13, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
-        bar = slide.shapes[-1]
+        bar = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, MARGIN, y, CONTENT_W, Inches(0.4))
         bar.fill.solid()
         bar.fill.fore_color.rgb = ACCENT_COLOR
+        bar.line.fill.background()
+        _tf_setup(bar.text_frame, season["stat_line"], 13, WHITE, bold=True, align=PP_ALIGN.CENTER)
+        bar.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
         y += Inches(0.5)
-    add_text(slide, MARGIN, y, CONTENT_W, estimate_text_height(season.get("content",""), 12, CONTENT_W),
-              season.get("content", ""), size=12)
+    content_h = estimate_text_height(season.get("content", ""), 12, CONTENT_W)
+    add_text(slide, MARGIN, y, CONTENT_W, content_h, season.get("content", ""), size=12)
+    y += content_h + Inches(0.3)
+    if season_table:
+        add_image_placeholder(slide, MARGIN, y, CONTENT_W, Inches(1.8),
+                               "월별 기온 차트 (자리표시 — 실제 그래픽은 디자이너 작업)")
+        y += Inches(1.95)
+        header = "  ".join(f"{row.get('month','')}" for row in season_table)
+        add_text(slide, MARGIN, y, CONTENT_W, Inches(0.3), header, size=10, color=MUTED_COLOR,
+                  align=PP_ALIGN.CENTER)
     return slide
 
 
@@ -261,12 +419,8 @@ def build(content_json, out_path, per_slide=3):
     prs = new_presentation()
     cover = content_json.get("cover", {})
     build_cover_slide(prs, cover, content_json.get("watermark_label", ""))
-    build_brand_slide(
-        prs,
-        content_json.get("brand_tagline", ""),
-        content_json.get("brand_points", []),
-        content_json.get("why_hyecho", {}),
-    )
+    build_background_slide(prs, content_json.get("background_story"))
+    build_reasons_slide(prs, content_json.get("why_reasons"))
     build_destination_slides(
         prs,
         content_json.get("destinations", []),
@@ -274,7 +428,20 @@ def build(content_json, out_path, per_slide=3):
         theme_line=None,
         per_slide=per_slide,
     )
-    build_season_slide(prs, content_json.get("season", {}))
+    build_route_compare_slide(prs, content_json.get("route_compare"))
+    build_experience_slide(
+        prs,
+        content_json.get("brand_tagline", ""),
+        content_json.get("brand_points", []),
+        content_json.get("experience_points"),
+    )
+    build_highlights_slides(
+        prs,
+        content_json.get("highlights"),
+        heading=content_json.get("highlights_heading"),
+    )
+    build_season_slide(prs, content_json.get("season", {}), content_json.get("season_table"))
+    build_altitude_slide(prs, content_json.get("altitude_profile"), content_json.get("altitude_faq"))
     build_banner_request_slide(prs, cover.get("product_name", ""))
     prs.save(out_path)
     return prs
