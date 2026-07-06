@@ -37,11 +37,18 @@ SCHEMA_HINTS = {
   "destinations": [ {"title": str, "description": str, "region_tag": str} ],
   "season": {"title": str, "content": str, "stat_line": str}
 }
+※ cover.tagline: 표지 맨 위에 작게 들어가는 짧은 감성 문구 (2줄 이내, 꾸미는 말)
+※ cover.product_name: 실제 상품명 그 자체입니다. 사업부 자료의 상품 제목([...] 태그 포함)을
+  거의 그대로 씁니다. 이 필드가 표지의 메인 타이틀(가장 큰 글씨)과 배너 슬라이드에 그대로
+  노출되므로, 절대 비워두거나 다른 감성 문구로 대체하지 마세요.
+※ cover.subtitle: 이미지 아래에 들어가는 보조 설명 한 줄 (product_name의 재진술이 아니라
+  추가 정보나 톤을 보여주는 문구)
 ※ watermark_label: 표지 우상단에 작게 들어가는 영문 1~2단어 (여정/지역명)
 ※ destinations: 위 예시는 배열 안에 원소 1개만 보여준 것입니다. 실제로는
   {"title": str, "description": str, "region_tag": str} 형태의 원소를 실제 입력에 있는 개수만큼
   반복하세요. region_tag는 그 목적지가 속한 지역/국가/성(省) 이름이며, 없으면 빈 문자열로 두세요.
-  사업부 자료에 없는 지명을 지어내진 마세요.
+  사업부 자료에 없는 지명을 지어내진 마세요. description은 2~3문장 이내로 간결하게 쓰세요
+  (너무 길면 레이아웃이 깨집니다).
 ※ season.stat_line: 계절 섹션 상단의 짧은 강조 배너 문구 (예: "최적기: O월~O월")
 ※ 사업부 자료에 정보가 부족한 필드(예: brand_points, why_hyecho 문구)는 빈 값으로 두지 말고,
   사업부 자료의 사실에 기반해 정현지 문체로 자연스럽게 채워서 완성하세요. 단, destinations에
