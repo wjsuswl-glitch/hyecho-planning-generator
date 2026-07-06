@@ -31,12 +31,15 @@ SCHEMA_HINTS = {
   "brand_points": [str, str],
   "watermark_label": str,
   "why_hyecho": {
-    "section_title": str, "subtitle1": str, "subtitle2": str,
-    "badge": str, "theme_line": str
+    "section_title": str, "subtitle1": str, "subtitle2": str, "badge": str
   },
+  "destinations_heading": str,
   "destinations": [ {"title": str, "description": str, "region_tag": str} ],
   "season": {"title": str, "content": str, "stat_line": str}
 }
+※ why_hyecho.subtitle1, subtitle2: 각각 한 줄짜리 짧은 문구입니다 (긴 문단으로 쓰지 마세요).
+※ destinations_heading: 목적지 소개 섹션의 제목입니다 (예: "OOO 하이라이트"). why_hyecho의
+  section_title과는 다른, 목적지 파트 전용 제목입니다.
 ※ cover.tagline: 표지 맨 위에 작게 들어가는 짧은 감성 문구 (2줄 이내, 꾸미는 말)
 ※ cover.product_name: 실제 상품명 그 자체입니다. 사업부 자료의 상품 제목([...] 태그 포함)을
   거의 그대로 씁니다. 이 필드가 표지의 메인 타이틀(가장 큰 글씨)과 배너 슬라이드에 그대로
