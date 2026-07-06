@@ -48,6 +48,22 @@ def _tf_setup(tf, text, size, color, bold=False, align=PP_ALIGN.LEFT, font=FONT_
         r.font.name = font
 
 
+def estimate_text_height(text, size_pt, width_emu, line_spacing=1.35):
+    """글자 수 기반으로 텍스트가 실제로 차지할 높이를 대략 추정한다.
+    고정 간격 대신 이걸 써야 설명 길이에 따라 다음 요소와 안 겹친다."""
+    if not text:
+        return Inches(0.15)
+    width_in = Emu(width_emu).inches
+    # 한글 기준 12pt 글자 폭 대략치 (완전 정확하진 않지만 겹침 방지엔 충분)
+    char_w_in = (size_pt / 72) * 0.95
+    chars_per_line = max(1, int(width_in / char_w_in))
+    total_lines = 0
+    for line in str(text).split("\n"):
+        total_lines += max(1, -(-len(line) // chars_per_line))  # ceil
+    line_h_in = (size_pt / 72) * line_spacing
+    return Inches(total_lines * line_h_in + 0.05)
+
+
 def add_text(slide, left, top, width, height, text, size=14, color=TEXT_COLOR,
              bold=False, align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.TOP):
     box = slide.shapes.add_textbox(left, top, width, height)
@@ -114,7 +130,8 @@ def build_cover_slide(prs, cover, watermark_label=""):
         add_text(slide, MARGIN, y, CONTENT_W, Inches(0.4), cover["subtitle"],
                   size=14, bold=True, align=PP_ALIGN.CENTER)
         y += Inches(0.45)
-    add_text(slide, MARGIN, y, CONTENT_W, Inches(1.0), cover.get("intro_copy", ""),
+    intro_h = estimate_text_height(cover.get("intro_copy", ""), 12, CONTENT_W)
+    add_text(slide, MARGIN, y, CONTENT_W, intro_h, cover.get("intro_copy", ""),
               size=12, color=MUTED_COLOR, align=PP_ALIGN.CENTER)
     if watermark_label:
         add_text(slide, SLIDE_W - Inches(1.5), Inches(0.3), Inches(1.1), Inches(0.3),
@@ -131,8 +148,9 @@ def build_brand_slide(prs, brand_tagline, brand_points, why_hyecho):
                   size=16, bold=True, align=PP_ALIGN.CENTER)
         y += Inches(0.6)
     for point in (brand_points or []):
-        add_text(slide, MARGIN, y, CONTENT_W, Inches(0.4), f"· {point}", size=13)
-        y += Inches(0.45)
+        h = estimate_text_height(point, 13, CONTENT_W)
+        add_text(slide, MARGIN, y, CONTENT_W, h, f"· {point}", size=13)
+        y += h + Inches(0.1)
     y += Inches(0.2)
     if why_hyecho:
         add_section_bar(slide, y, why_hyecho.get("section_title", "혜초와 함께라면"))
@@ -149,16 +167,19 @@ def build_brand_slide(prs, brand_tagline, brand_points, why_hyecho):
     return slide
 
 
-def build_destination_slides(prs, destinations, section_title=None, theme_line=None, per_slide=3):
-    """목적지 개수만큼만 슬라이드를 만든다. per_slide개씩 묶어서 한 슬라이드에 배치."""
+def build_destination_slides(prs, destinations, section_title=None, theme_line=None, per_slide=None):
+    """목적지 개수만큼만 슬라이드를 만든다. 고정 개수로 나누지 않고, 실제 텍스트
+    길이를 추정해서 한 슬라이드에 들어갈 수 있는 만큼만 채우고 넘치면 다음 슬라이드로."""
     if not destinations:
         return []
     slides = []
-    chunks = [destinations[i:i + per_slide] for i in range(0, len(destinations), per_slide)]
-    for ci, chunk in enumerate(chunks):
+    bottom_limit = SLIDE_H - Inches(0.3)
+    idx = 0
+    first_slide = True
+    while idx < len(destinations):
         slide = _blank_slide(prs)
         y = Inches(0.4)
-        if ci == 0:
+        if first_slide:
             if section_title:
                 add_section_bar(slide, y, section_title)
                 y += Inches(0.6)
@@ -166,20 +187,37 @@ def build_destination_slides(prs, destinations, section_title=None, theme_line=N
                 add_text(slide, MARGIN, y, CONTENT_W, Inches(0.4), theme_line,
                           size=14, bold=True, align=PP_ALIGN.CENTER)
                 y += Inches(0.5)
-        for dest in chunk:
+            first_slide = False
+
+        placed_any = False
+        while idx < len(destinations):
+            dest = destinations[idx]
             region_tag = dest.get("region_tag")
+            title_h = estimate_text_height(dest.get("title", ""), 15, CONTENT_W)
+            image_h = Inches(1.6)
+            desc_h = estimate_text_height(dest.get("description", ""), 12, CONTENT_W)
+            block_h = (Inches(0.35) if region_tag else Inches(0)) + title_h + Inches(0.1) \
+                + image_h + Inches(0.15) + desc_h + Inches(0.3)
+
+            if placed_any and y + block_h > bottom_limit:
+                break  # 이 슬라이드엔 더 안 들어감 -> 다음 슬라이드로
+
             if region_tag:
                 add_text(slide, MARGIN, y, Inches(1.2), Inches(0.3), region_tag,
                           size=10, bold=True, color=WHITE)
-                y += Inches(0.05)
-            add_text(slide, MARGIN, y, CONTENT_W, Inches(0.4), dest.get("title", ""),
+                y += Inches(0.35)
+            add_text(slide, MARGIN, y, CONTENT_W, title_h, dest.get("title", ""),
                       size=15, bold=True)
-            y += Inches(0.45)
-            add_image_placeholder(slide, MARGIN, y, CONTENT_W, Inches(1.6), "이미지")
-            y += Inches(1.75)
-            add_text(slide, MARGIN, y, CONTENT_W, Inches(0.6), dest.get("description", ""),
+            y += title_h + Inches(0.1)
+            add_image_placeholder(slide, MARGIN, y, CONTENT_W, image_h, "이미지")
+            y += image_h + Inches(0.15)
+            add_text(slide, MARGIN, y, CONTENT_W, desc_h, dest.get("description", ""),
                       size=12, color=MUTED_COLOR)
-            y += Inches(0.85)
+            y += desc_h + Inches(0.3)
+
+            placed_any = True
+            idx += 1
+
         slides.append(slide)
     return slides
 
@@ -196,7 +234,8 @@ def build_season_slide(prs, season):
         bar.fill.solid()
         bar.fill.fore_color.rgb = ACCENT_COLOR
         y += Inches(0.5)
-    add_text(slide, MARGIN, y, CONTENT_W, Inches(1.2), season.get("content", ""), size=12)
+    add_text(slide, MARGIN, y, CONTENT_W, estimate_text_height(season.get("content",""), 12, CONTENT_W),
+              season.get("content", ""), size=12)
     return slide
 
 
@@ -207,9 +246,9 @@ def build_banner_request_slide(prs, product_name):
     slide = _blank_slide(prs)
     add_section_bar(slide, Inches(0.4), "배너 기획")
     y = Inches(1.0)
-    add_text(slide, MARGIN, y, CONTENT_W, Inches(0.4), product_name, size=14, bold=True,
+    add_text(slide, MARGIN, y, CONTENT_W, Inches(0.6), product_name, size=20, bold=True,
               align=PP_ALIGN.CENTER)
-    y += Inches(0.6)
+    y += Inches(0.8)
     for label in ["메인 배너 (가로형)", "서브 배너 (정사각형)", "썸네일 배너"]:
         add_image_placeholder(slide, MARGIN, y, CONTENT_W, Inches(1.3), label)
         y += Inches(1.5)
