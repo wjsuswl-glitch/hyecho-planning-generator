@@ -48,20 +48,21 @@ def _tf_setup(tf, text, size, color, bold=False, align=PP_ALIGN.LEFT, font=FONT_
         r.font.name = font
 
 
-def estimate_text_height(text, size_pt, width_emu, line_spacing=1.35):
+def estimate_text_height(text, size_pt, width_emu, line_spacing=1.35, bold=False):
     """글자 수 기반으로 텍스트가 실제로 차지할 높이를 대략 추정한다.
-    고정 간격 대신 이걸 써야 설명 길이에 따라 다음 요소와 안 겹친다."""
+    고정 간격 대신 이걸 써야 설명 길이에 따라 다음 요소와 안 겹친다.
+    실제 렌더링 폭 추정은 부정확할 수 있어 여유 마진을 넉넉히 둔다."""
     if not text:
         return Inches(0.15)
     width_in = Emu(width_emu).inches
-    # 한글 기준 12pt 글자 폭 대략치 (완전 정확하진 않지만 겹침 방지엔 충분)
-    char_w_in = (size_pt / 72) * 0.95
+    # 한글 기준 글자 폭 대략치 (볼드면 좀 더 넓게 잡음), 안전 마진 포함
+    char_w_in = (size_pt / 72) * (1.05 if bold else 0.95)
     chars_per_line = max(1, int(width_in / char_w_in))
     total_lines = 0
     for line in str(text).split("\n"):
         total_lines += max(1, -(-len(line) // chars_per_line))  # ceil
     line_h_in = (size_pt / 72) * line_spacing
-    return Inches(total_lines * line_h_in + 0.05)
+    return Inches(total_lines * line_h_in + 0.15)  # 여유 마진 추가
 
 
 def add_text(slide, left, top, width, height, text, size=14, color=TEXT_COLOR,
@@ -193,7 +194,7 @@ def build_destination_slides(prs, destinations, section_title=None, theme_line=N
         while idx < len(destinations):
             dest = destinations[idx]
             region_tag = dest.get("region_tag")
-            title_h = estimate_text_height(dest.get("title", ""), 15, CONTENT_W)
+            title_h = estimate_text_height(dest.get("title", ""), 15, CONTENT_W, bold=True)
             image_h = Inches(1.6)
             desc_h = estimate_text_height(dest.get("description", ""), 12, CONTENT_W)
             block_h = (Inches(0.35) if region_tag else Inches(0)) + title_h + Inches(0.1) \
@@ -269,8 +270,8 @@ def build(content_json, out_path, per_slide=3):
     build_destination_slides(
         prs,
         content_json.get("destinations", []),
-        section_title=content_json.get("why_hyecho", {}).get("section_title"),
-        theme_line=content_json.get("why_hyecho", {}).get("theme_line"),
+        section_title=content_json.get("destinations_heading"),
+        theme_line=None,
         per_slide=per_slide,
     )
     build_season_slide(prs, content_json.get("season", {}))
