@@ -27,19 +27,25 @@ BANNER_MAP_INCLUDE = {"박소설": True, "신윤정": True, "정현지": False}
 SCHEMA_HINTS = {
     "정현지": """{
   "cover": {"tagline": str, "product_name": str, "region_tag": str, "subtitle": str, "intro_copy": str},
-  "brand_tagline": str,
-  "brand_points": [str, str],
   "watermark_label": str,
-  "why_hyecho": {
-    "section_title": str, "subtitle1": str, "subtitle2": str, "badge": str
-  },
+  "background_story": {"kicker": str, "title": str, "content": str},
+  "why_reasons": [ {"title": str, "content": str} ],
   "destinations_heading": str,
   "destinations": [ {"title": str, "description": str, "region_tag": str} ],
-  "season": {"title": str, "content": str, "stat_line": str}
+  "route_compare": {
+    "title": str,
+    "routes": [ {"name": str, "course": str, "scenery": str, "appeal": str, "summary": str} ]
+  },
+  "brand_tagline": str,
+  "brand_points": [str, str],
+  "experience_points": [ {"title": str, "description": str} ],
+  "highlights_heading": str,
+  "highlights": [ {"title": str, "description": str} ],
+  "season": {"title": str, "content": str, "stat_line": str},
+  "season_table": [ {"month": str, "high": str, "low": str} ],
+  "altitude_profile": [ {"name": str, "altitude": str} ],
+  "altitude_faq": {"question": str, "answer": str}
 }
-※ why_hyecho.subtitle1, subtitle2: 각각 한 줄짜리 짧은 문구입니다 (긴 문단으로 쓰지 마세요).
-※ destinations_heading: 목적지 소개 섹션의 제목입니다 (예: "OOO 하이라이트"). why_hyecho의
-  section_title과는 다른, 목적지 파트 전용 제목입니다.
 ※ cover.tagline: 표지 맨 위에 작게 들어가는 짧은 감성 문구 (2줄 이내, 꾸미는 말)
 ※ cover.product_name: 실제 상품명 그 자체입니다. 사업부 자료의 상품 제목([...] 태그 포함)을
   거의 그대로 씁니다. 이 필드가 표지의 메인 타이틀(가장 큰 글씨)과 배너 슬라이드에 그대로
@@ -47,16 +53,33 @@ SCHEMA_HINTS = {
 ※ cover.subtitle: 이미지 아래에 들어가는 보조 설명 한 줄 (product_name의 재진술이 아니라
   추가 정보나 톤을 보여주는 문구)
 ※ watermark_label: 표지 우상단에 작게 들어가는 영문 1~2단어 (여정/지역명)
+※ background_story: "OOO란?" 같은 여행지/노선의 배경·역사·유래를 설명하는 섹션입니다.
+  사업부 자료에 이런 배경 설명이 없으면, 잘 알려진 일반 상식 수준에서만 채우고
+  구체적 사실(연도, 수치 등)을 지어내지 마세요.
+※ why_reasons: "왜 이 지역/노선인가"를 설명하는 이유 목록입니다. 실제 입력 내용에 근거해
+  2~4개 작성하세요.
 ※ destinations: 위 예시는 배열 안에 원소 1개만 보여준 것입니다. 실제로는
   {"title": str, "description": str, "region_tag": str} 형태의 원소를 실제 입력에 있는 개수만큼
   반복하세요. region_tag는 그 목적지가 속한 지역/국가/성(省) 이름이며, 없으면 빈 문자열로 두세요.
   사업부 자료에 없는 지명을 지어내진 마세요. description은 2~3문장 이내로 간결하게 쓰세요
   (너무 길면 레이아웃이 깨집니다).
+※ route_compare: 사업부 자료에 대안 코스/노선 비교 내용이 있을 때만 채우세요. 없으면
+  routes를 빈 배열로 두세요 (있지도 않은 대안 코스를 지어내지 마세요).
+※ destinations_heading: 목적지 소개 섹션의 제목입니다 (예: "OOO 하이라이트"). brand_tagline과는
+  다른 문구로 작성하세요 (같은 말 반복 금지).
+※ experience_points: 노쇼핑/편안한 이동/독보적 일정 같은 "혜초만의 차별점" 카드 2~3개.
+※ highlights_heading, highlights: destinations와는 다른, 더 큰 테마 단위의 "여정 하이라이트"
+  입니다 (예: "국내 유일 육로 횡단", "매일 변화하는 풍경", "문화의 공존" 등 3~4개). 특정
+  지명 하나가 아니라 여정 전체를 관통하는 주제로 작성하세요.
 ※ season.stat_line: 계절 섹션 상단의 짧은 강조 배너 문구 (예: "최적기: O월~O월")
-※ 사업부 자료에 정보가 부족한 필드(예: brand_points, why_hyecho 문구)는 빈 값으로 두지 말고,
-  사업부 자료의 사실에 기반해 정현지 문체로 자연스럽게 채워서 완성하세요. 단, destinations에
-  없는 장소를 새로 지어내는 것은 금지입니다 — 채우기는 "표현"에 대한 것이지 "사실 날조"가
-  아닙니다.""",
+※ season_table: 월별 기온 등 계절 통계가 사업부 자료에 있을 때만 채우세요. 없으면 빈
+  배열로 두세요.
+※ altitude_profile, altitude_faq: 고산 지대 여정처럼 "고도/고산증" 관련 안내가 필요한
+  상품에만 채우세요. 해당 없는 상품(저지대 여행 등)이면 둘 다 빈 값/생략하세요.
+※ 사업부 자료에 정보가 부족한 필드(예: brand_points, experience_points 문구)는 빈 값으로 두지
+  말고, 사업부 자료의 사실에 기반해 정현지 문체로 자연스럽게 채워서 완성하세요. 단, destinations나
+  route_compare, season_table처럼 사실 데이터가 필요한 항목에 없는 내용을 새로 지어내는 것은
+  금지입니다 — 채우기는 "표현"에 대한 것이지 "사실 날조"가 아닙니다.""",
     "신윤정": """{
   "cover": {"tagline": str, "subtitle": str, "intro_copy": str},
   "why_hyecho": {"title": str, "points": [str, str, str, str]}
