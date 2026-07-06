@@ -30,31 +30,23 @@ SCHEMA_HINTS = {
   "brand_tagline": str,
   "brand_points": [str, str],
   "watermark_label": str,
-  "map_stops": [str],
-  "map_note": str,
   "why_hyecho": {
-    "title": str, "subtitle1": str, "subtitle2": str,
-    "badge": str, "section_title": str, "theme_line": str
+    "section_title": str, "subtitle1": str, "subtitle2": str,
+    "badge": str, "theme_line": str
   },
-  "theme_categories": [
-    {"label": str, "bullets": [str]},
-    {"label": str, "bullets": [str]},
-    {"label": str, "bullets": [str]}
-  ],
-  "theme_categories_intro": str,
-  "food_theme": {"title": str, "description": str},
   "destinations": [ {"title": str, "description": str, "region_tag": str} ],
-  "section_summary": str,
   "season": {"title": str, "content": str, "stat_line": str}
 }
-※ watermark_label: 표지 우하단에 작게 들어가는 영문 1~2단어 (여정/지역명)
-※ map_stops: 노선 지도에 순서대로 표시할 경유지 이름 배열 (IN/OUT 포함, 실제 경유 순서대로)
-※ map_note: 지도 옆에 들어가는 디자이너용 짧은 안내 문구 (예: "OO 지역 전체지도를 옆에 작게 넣어주세요")
-※ theme_categories: 정확히 3개 (반드시 3개, 실제 입력 내용에서 3가지 테마 축을 뽑아서)
+※ watermark_label: 표지 우상단에 작게 들어가는 영문 1~2단어 (여정/지역명)
 ※ destinations: 위 예시는 배열 안에 원소 1개만 보여준 것입니다. 실제로는
-  {"title": str, "description": str, "region_tag": str} 형태의 원소를 실제 입력에 있는 개수만큼 반복하세요.
-  region_tag는 그 목적지가 속한 지역/국가/성(省) 이름이며, 없으면 빈 문자열로 두세요.
-※ season.stat_line: 계절 섹션 상단의 짧은 강조 배너 문구 (예: "최적기: O월~O월")""",
+  {"title": str, "description": str, "region_tag": str} 형태의 원소를 실제 입력에 있는 개수만큼
+  반복하세요. region_tag는 그 목적지가 속한 지역/국가/성(省) 이름이며, 없으면 빈 문자열로 두세요.
+  사업부 자료에 없는 지명을 지어내진 마세요.
+※ season.stat_line: 계절 섹션 상단의 짧은 강조 배너 문구 (예: "최적기: O월~O월")
+※ 사업부 자료에 정보가 부족한 필드(예: brand_points, why_hyecho 문구)는 빈 값으로 두지 말고,
+  사업부 자료의 사실에 기반해 정현지 문체로 자연스럽게 채워서 완성하세요. 단, destinations에
+  없는 장소를 새로 지어내는 것은 금지입니다 — 채우기는 "표현"에 대한 것이지 "사실 날조"가
+  아닙니다.""",
     "신윤정": """{
   "cover": {"tagline": str, "subtitle": str, "intro_copy": str},
   "why_hyecho": {"title": str, "points": [str, str, str, str]}
