@@ -66,7 +66,7 @@ if uploaded and st.button("생성하기", type="primary"):
         try:
             with st.spinner("PPTX 조립 중..."):
                 out_path = tmp_path.replace(".docx", "_결과.pptx")
-                if writer_style == "정현지":
+                if writer_style in ("정현지", "박소설"):
                     # v2: 옛 기획안을 열어 덮어쓰지 않고, 매번 새로 슬라이드를 생성
                     dynamic_builder.build(content, out_path)
                     log = [("dynamic_build", "OK — 새 슬라이드로 생성됨 (템플릿 재사용 없음)")]
@@ -97,10 +97,20 @@ if uploaded and st.button("생성하기", type="primary"):
             for k, v in log:
                 st.text(f"{k} -> {v}")
 
+        # 파일명을 기획자명_카테고리 대신 실제 상품명으로 — 여러 개 만들 때 구분되도록
+        product_name = (
+            content.get("cover", {}).get("product_name")
+            or content.get("cover", {}).get("headline")
+            or f"{writer_style}_{category}"
+        )
+        safe_name = "".join(
+            c for c in str(product_name) if c not in '\\/:*?"<>|\n'
+        ).strip()[:60] or f"{writer_style}_{category}"
+
         with open(out_path, "rb") as f:
-            st.download_button("📥 PPTX 다운로드", f, file_name=f"{writer_style}_{category}_기획안.pptx")
+            st.download_button("📥 PPTX 다운로드", f, file_name=f"{safe_name}_기획안.pptx")
 
     os.unlink(tmp_path)
 
 st.divider()
-st.caption(f"현재 등록된 템플릿: {', '.join(available_styles)} · 박소설 스타일은 사업부 자료 확보 후 추가 예정")
+st.caption(f"현재 등록된 템플릿: {', '.join(available_styles)}")
