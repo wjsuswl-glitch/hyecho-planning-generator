@@ -94,13 +94,11 @@ SCHEMA_HINTS = {
   말고, 사업부 자료의 사실에 기반해 정현지 문체로 자연스럽게 채워서 완성하세요. 단, destinations나
   route_compare, season_table처럼 사실 데이터가 필요한 항목에 없는 내용을 새로 지어내는 것은
   금지입니다 — 채우기는 "표현"에 대한 것이지 "사실 날조"가 아닙니다.""",
-    "신윤정": """{
-  "cover": {"tagline": str, "subtitle": str, "intro_copy": str},
-  "why_hyecho": {"title": str, "points": [str, str, str, str]}
-}""",
+    "신윤정": "__SAME_AS_정현지__",
     "박소설": "__SAME_AS_정현지__",
 }
 SCHEMA_HINTS["박소설"] = SCHEMA_HINTS["정현지"]  # 박소설도 동일한 동적 빌더(builder.py) 스키마 사용
+SCHEMA_HINTS["신윤정"] = SCHEMA_HINTS["정현지"]  # 신윤정도 동일한 동적 빌더(builder.py) 스키마 사용
 
 DESTINATIONS_RULE = (
     "[destinations 배열 규칙]\n"
