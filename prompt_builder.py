@@ -28,11 +28,6 @@ SCHEMA_HINTS = {
     "정현지": """{
   "cover": {"tagline": str, "product_name": str, "region_tag": str, "subtitle": str, "intro_copy": str},
   "watermark_label": str,
-  "product_meta": {
-    "theme": str, "difficulty": str, "lodging_type": str,
-    "avg_distance": str, "transfer_time": str
-  },
-  "hashtags": [str],
   "background_story": {"kicker": str, "title": str, "content": str},
   "why_reasons": [ {"title": str, "content": str} ],
   "destinations_heading": str,
@@ -81,11 +76,6 @@ SCHEMA_HINTS = {
 ※ season.stat_line: 계절 섹션 상단의 짧은 강조 배너 문구 (예: "최적기: O월~O월")
 ※ season_table: 월별 기온 등 계절 통계가 사업부 자료에 있을 때만 채우세요. 없으면 빈
   배열로 두세요.
-※ product_meta: 혜초 홈페이지 상품 페이지 상단에 실제로 표시되는 표준 스펙 요약입니다.
-  difficulty는 "상/중/하" 같은 간단한 등급, avg_distance/transfer_time은 트레킹·하이킹류
-  상품에만 해당하면 채우고, 아니면 빈 문자열로 두세요.
-※ hashtags: 실제 사업부 자료의 지명/테마에서 뽑은 검색용 키워드 3~8개 (예: "#천장공로",
-  "#차마고도", "#로드트립"). 없는 내용을 지어내지 말고 실제 등장한 지명/테마 위주로.
 ※ altitude_profile, safety_note: 고산 트레킹은 "고산증", 도보순례는 "체력/보험",
   일반 하이킹은 "난이도" 등 카테고리에 맞는 안전/난이도 안내가 필요한 상품에만 채우세요.
   해당 없는 상품(저지대 여행 등)이면 둘 다 빈 값/생략하세요. safety_note는 혜초 홈페이지의
