@@ -28,6 +28,11 @@ SCHEMA_HINTS = {
     "정현지": """{
   "cover": {"tagline": str, "product_name": str, "region_tag": str, "subtitle": str, "intro_copy": str},
   "watermark_label": str,
+  "product_meta": {
+    "theme": str, "difficulty": str, "lodging_type": str,
+    "avg_distance": str, "transfer_time": str
+  },
+  "hashtags": [str],
   "background_story": {"kicker": str, "title": str, "content": str},
   "why_reasons": [ {"title": str, "content": str} ],
   "destinations_heading": str,
@@ -44,7 +49,7 @@ SCHEMA_HINTS = {
   "season": {"title": str, "content": str, "stat_line": str},
   "season_table": [ {"month": str, "high": str, "low": str} ],
   "altitude_profile": [ {"name": str, "altitude": str} ],
-  "altitude_faq": {"question": str, "answer": str}
+  "safety_note": {"question": str, "answer": str}
 }
 ※ cover.tagline: 표지 맨 위에 작게 들어가는 짧은 감성 문구 (2줄 이내, 꾸미는 말)
 ※ cover.product_name: 실제 상품명 그 자체입니다. 사업부 자료의 상품 제목([...] 태그 포함)을
@@ -74,8 +79,15 @@ SCHEMA_HINTS = {
 ※ season.stat_line: 계절 섹션 상단의 짧은 강조 배너 문구 (예: "최적기: O월~O월")
 ※ season_table: 월별 기온 등 계절 통계가 사업부 자료에 있을 때만 채우세요. 없으면 빈
   배열로 두세요.
-※ altitude_profile, altitude_faq: 고산 지대 여정처럼 "고도/고산증" 관련 안내가 필요한
-  상품에만 채우세요. 해당 없는 상품(저지대 여행 등)이면 둘 다 빈 값/생략하세요.
+※ product_meta: 혜초 홈페이지 상품 페이지 상단에 실제로 표시되는 표준 스펙 요약입니다.
+  difficulty는 "상/중/하" 같은 간단한 등급, avg_distance/transfer_time은 트레킹·하이킹류
+  상품에만 해당하면 채우고, 아니면 빈 문자열로 두세요.
+※ hashtags: 실제 사업부 자료의 지명/테마에서 뽑은 검색용 키워드 3~8개 (예: "#천장공로",
+  "#차마고도", "#로드트립"). 없는 내용을 지어내지 말고 실제 등장한 지명/테마 위주로.
+※ altitude_profile, safety_note: 고산 트레킹은 "고산증", 도보순례는 "체력/보험",
+  일반 하이킹은 "난이도" 등 카테고리에 맞는 안전/난이도 안내가 필요한 상품에만 채우세요.
+  해당 없는 상품(저지대 여행 등)이면 둘 다 빈 값/생략하세요. safety_note는 혜초 홈페이지의
+  표준 안내 톤(과장 없이 사실 위주)을 따르세요.
 ※ 사업부 자료에 정보가 부족한 필드(예: brand_points, experience_points 문구)는 빈 값으로 두지
   말고, 사업부 자료의 사실에 기반해 정현지 문체로 자연스럽게 채워서 완성하세요. 단, destinations나
   route_compare, season_table처럼 사실 데이터가 필요한 항목에 없는 내용을 새로 지어내는 것은
