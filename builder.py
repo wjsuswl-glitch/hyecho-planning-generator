@@ -111,7 +111,7 @@ def _blank_slide(prs):
 # 슬라이드 빌더 함수 (정현지 스타일)
 # ---------------------------------------------------------------------------
 
-def build_cover_slide(prs, cover, watermark_label=""):
+def build_cover_slide(prs, cover, watermark_label="", product_meta=None, hashtags=None):
     slide = _blank_slide(prs)
     y = Inches(0.5)
     add_text(slide, MARGIN, y, CONTENT_W, Inches(0.5), cover.get("tagline", ""),
@@ -124,6 +124,18 @@ def build_cover_slide(prs, cover, watermark_label=""):
         add_text(slide, MARGIN, y, CONTENT_W, Inches(0.4), cover["region_tag"],
                   size=13, color=MUTED_COLOR, align=PP_ALIGN.CENTER)
         y += Inches(0.45)
+    if product_meta:
+        meta_line = "  ·  ".join(
+            str(v) for v in [
+                product_meta.get("theme"), product_meta.get("difficulty"),
+                product_meta.get("lodging_type"), product_meta.get("avg_distance"),
+                product_meta.get("transfer_time"),
+            ] if v
+        )
+        if meta_line:
+            add_text(slide, MARGIN, y, CONTENT_W, Inches(0.3), meta_line, size=10,
+                      color=MUTED_COLOR, align=PP_ALIGN.CENTER)
+            y += Inches(0.35)
     y += Inches(0.15)
     add_image_placeholder(slide, MARGIN, y, CONTENT_W, Inches(3.2), "메인 이미지")
     y += Inches(3.4)
@@ -134,6 +146,11 @@ def build_cover_slide(prs, cover, watermark_label=""):
     intro_h = estimate_text_height(cover.get("intro_copy", ""), 12, CONTENT_W)
     add_text(slide, MARGIN, y, CONTENT_W, intro_h, cover.get("intro_copy", ""),
               size=12, color=MUTED_COLOR, align=PP_ALIGN.CENTER)
+    y += intro_h + Inches(0.2)
+    if hashtags:
+        tag_line = "  ".join(f"#{t.lstrip('#')}" for t in hashtags)
+        add_text(slide, MARGIN, y, CONTENT_W, Inches(0.3), tag_line, size=10,
+                  color=ACCENT_COLOR, align=PP_ALIGN.CENTER)
     if watermark_label:
         add_text(slide, SLIDE_W - Inches(1.5), Inches(0.15), Inches(1.1), Inches(0.3),
                   watermark_label, size=11, bold=True, color=RGBColor(0xCC, 0xB0, 0x00),
@@ -339,18 +356,20 @@ def build_highlights_slides(prs, highlights, heading=None):
     return slides
 
 
-def build_altitude_slide(prs, altitude_profile, altitude_faq):
-    """경유지 고도 프로필 + 고산증 관련 FAQ"""
-    if not altitude_profile and not altitude_faq:
+def build_safety_slide(prs, altitude_profile, safety_note):
+    """경유지 고도 프로필(있는 경우) + 안전/난이도 관련 표준 안내.
+    고산 트레킹의 '고산증', 도보순례의 '체력/보험', 일반 하이킹의 '난이도' 등
+    카테고리에 따라 톤이 다른 표준 안내문을 담는 범용 슬라이드."""
+    if not altitude_profile and not safety_note:
         return None
     slide = _blank_slide(prs)
     y = Inches(0.4)
-    if altitude_faq and altitude_faq.get("question"):
-        add_text(slide, MARGIN, y, CONTENT_W, Inches(0.4), altitude_faq["question"], size=15,
+    if safety_note and safety_note.get("question"):
+        add_text(slide, MARGIN, y, CONTENT_W, Inches(0.4), safety_note["question"], size=15,
                   bold=True, align=PP_ALIGN.CENTER)
         y += Inches(0.5)
-        ans_h = estimate_text_height(altitude_faq.get("answer", ""), 12, CONTENT_W)
-        add_text(slide, MARGIN, y, CONTENT_W, ans_h, altitude_faq.get("answer", ""), size=12,
+        ans_h = estimate_text_height(safety_note.get("answer", ""), 12, CONTENT_W)
+        add_text(slide, MARGIN, y, CONTENT_W, ans_h, safety_note.get("answer", ""), size=12,
                   align=PP_ALIGN.CENTER)
         y += ans_h + Inches(0.35)
     if altitude_profile:
@@ -418,7 +437,11 @@ def build(content_json, out_path, per_slide=3):
     """content_json(정현지 스키마) -> 새 PPTX 파일 생성"""
     prs = new_presentation()
     cover = content_json.get("cover", {})
-    build_cover_slide(prs, cover, content_json.get("watermark_label", ""))
+    build_cover_slide(
+        prs, cover, content_json.get("watermark_label", ""),
+        product_meta=content_json.get("product_meta"),
+        hashtags=content_json.get("hashtags"),
+    )
     build_background_slide(prs, content_json.get("background_story"))
     build_reasons_slide(prs, content_json.get("why_reasons"))
     build_destination_slides(
@@ -441,7 +464,7 @@ def build(content_json, out_path, per_slide=3):
         heading=content_json.get("highlights_heading"),
     )
     build_season_slide(prs, content_json.get("season", {}), content_json.get("season_table"))
-    build_altitude_slide(prs, content_json.get("altitude_profile"), content_json.get("altitude_faq"))
+    build_safety_slide(prs, content_json.get("altitude_profile"), content_json.get("safety_note"))
     build_banner_request_slide(prs, cover.get("product_name", ""))
     prs.save(out_path)
     return prs
