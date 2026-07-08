@@ -111,7 +111,7 @@ def _blank_slide(prs):
 # 슬라이드 빌더 함수 (정현지 스타일)
 # ---------------------------------------------------------------------------
 
-def build_cover_slide(prs, cover, watermark_label="", product_meta=None, hashtags=None):
+def build_cover_slide(prs, cover, watermark_label=""):
     slide = _blank_slide(prs)
     y = Inches(0.5)
     add_text(slide, MARGIN, y, CONTENT_W, Inches(0.5), cover.get("tagline", ""),
@@ -124,18 +124,6 @@ def build_cover_slide(prs, cover, watermark_label="", product_meta=None, hashtag
         add_text(slide, MARGIN, y, CONTENT_W, Inches(0.4), cover["region_tag"],
                   size=13, color=MUTED_COLOR, align=PP_ALIGN.CENTER)
         y += Inches(0.45)
-    if product_meta:
-        meta_line = "  ·  ".join(
-            str(v) for v in [
-                product_meta.get("theme"), product_meta.get("difficulty"),
-                product_meta.get("lodging_type"), product_meta.get("avg_distance"),
-                product_meta.get("transfer_time"),
-            ] if v
-        )
-        if meta_line:
-            add_text(slide, MARGIN, y, CONTENT_W, Inches(0.3), meta_line, size=10,
-                      color=MUTED_COLOR, align=PP_ALIGN.CENTER)
-            y += Inches(0.35)
     y += Inches(0.15)
     add_image_placeholder(slide, MARGIN, y, CONTENT_W, Inches(3.2), "메인 이미지")
     y += Inches(3.4)
@@ -146,11 +134,6 @@ def build_cover_slide(prs, cover, watermark_label="", product_meta=None, hashtag
     intro_h = estimate_text_height(cover.get("intro_copy", ""), 12, CONTENT_W)
     add_text(slide, MARGIN, y, CONTENT_W, intro_h, cover.get("intro_copy", ""),
               size=12, color=MUTED_COLOR, align=PP_ALIGN.CENTER)
-    y += intro_h + Inches(0.2)
-    if hashtags:
-        tag_line = "  ".join(f"#{t.lstrip('#')}" for t in hashtags)
-        add_text(slide, MARGIN, y, CONTENT_W, Inches(0.3), tag_line, size=10,
-                  color=ACCENT_COLOR, align=PP_ALIGN.CENTER)
     if watermark_label:
         add_text(slide, SLIDE_W - Inches(1.5), Inches(0.15), Inches(1.1), Inches(0.3),
                   watermark_label, size=11, bold=True, color=RGBColor(0xCC, 0xB0, 0x00),
@@ -417,19 +400,48 @@ def build_season_slide(prs, season, season_table=None):
     return slide
 
 
-def build_banner_request_slide(prs, product_name):
-    """배너 기획 페이지 — 지역/상품과 무관하게 항상 고정 포함.
-    디자이너에게 필요한 배너 소재 요청 목록만 담고, 톤앤매너 코멘트 등은
-    넣지 않는다 (기획자가 결과물을 보고 직접 남길 예정)."""
+def build_banner_request_slide(prs, cover):
+    """배너 기획 페이지 — 실제 회사 배너제작 템플릿(배너제작.pptx)의 레이아웃을
+    그대로 재현. 4개 배너 슬롯(메인 와이드/서브메인 띠/서브메인 2단/지역 리스트)에
+    각각 이미지 자리와 '태그라인+타이틀' 텍스트를 넣는다. 스펙 라벨/안내 문구는
+    회사 표준이라 고정값이며, 지역/상품과 무관하게 항상 그대로 포함."""
     slide = _blank_slide(prs)
-    add_section_bar(slide, Inches(0.4), "배너 기획")
-    y = Inches(1.0)
-    add_text(slide, MARGIN, y, CONTENT_W, Inches(0.6), product_name, size=20, bold=True,
-              align=PP_ALIGN.CENTER)
-    y += Inches(0.8)
-    for label in ["메인 배너 (가로형)", "서브 배너 (정사각형)", "썸네일 배너"]:
-        add_image_placeholder(slide, MARGIN, y, CONTENT_W, Inches(1.3), label)
-        y += Inches(1.5)
+    tagline_title = f"{cover.get('tagline','')}\n{cover.get('product_name','')}"
+
+    add_section_bar(slide, Inches(0), "배너 기획", height=Inches(0.47), size=14)
+    add_text(slide, Inches(0.106), Inches(0.675), Inches(1.717), Inches(0.404),
+              "배너제작요청", size=13, bold=True)
+    add_text(slide, Inches(1.823), Inches(0.733), Inches(4.672), Inches(0.303),
+              "홈페이지 개편에 따라, 배너 디자인이 전면 교체되었습니다.", size=9, color=MUTED_COLOR)
+
+    # 메인 와이드 배너
+    add_text(slide, Inches(0.106), Inches(1.271), Inches(5.701), Inches(0.303),
+              "메인 와이드 배너 (PC: 1920x700, MO: 750x510), 가이드라인에 맞춰 제작", size=9, color=MUTED_COLOR)
+    add_image_placeholder(slide, Inches(0.217), Inches(1.630), Inches(5.475), Inches(1.817), "이미지")
+    add_text(slide, Inches(0.388), Inches(2.158), Inches(5.133), Inches(0.640),
+              tagline_title, size=13, bold=True, align=PP_ALIGN.CENTER)
+
+    # 서브메인 띠배너
+    add_text(slide, Inches(0.081), Inches(3.581), Inches(5.642), Inches(0.303),
+              "서브메인 띠배너 (PC: 1920x200, MO: 750x200), 가이드라인에 맞춰 제작", size=9, color=MUTED_COLOR)
+    add_image_placeholder(slide, Inches(0.136), Inches(4.021), Inches(7.028), Inches(0.979), "이미지")
+    add_text(slide, Inches(1.184), Inches(4.173), Inches(5.133), Inches(0.640),
+              tagline_title, size=13, bold=True, align=PP_ALIGN.CENTER)
+
+    # 서브메인 2단배너
+    add_text(slide, Inches(0.136), Inches(5.137), Inches(5.642), Inches(0.303),
+              "서브메인 2단배너 (PC: 590x370, MO: 585x670), 가이드라인에 맞춰 제작", size=9, color=MUTED_COLOR)
+    add_image_placeholder(slide, Inches(0.221), Inches(5.521), Inches(2.835), Inches(1.771), "이미지")
+    add_text(slide, Inches(0.288), Inches(6.138), Inches(2.835), Inches(0.454),
+              tagline_title, size=11, bold=True, align=PP_ALIGN.CENTER)
+
+    # 지역 리스트 배너
+    add_text(slide, Inches(0.205), Inches(7.481), Inches(5.701), Inches(0.303),
+              "지역 리스트 배너 (PC: 1200x207, MO: 750x207), 가이드라인에 맞춰 제작", size=9, color=MUTED_COLOR)
+    add_image_placeholder(slide, Inches(0.316), Inches(7.989), Inches(6.871), Inches(1.336), "이미지")
+    add_text(slide, Inches(1.184), Inches(8.280), Inches(5.133), Inches(0.640),
+              tagline_title, size=13, bold=True, align=PP_ALIGN.CENTER)
+
     return slide
 
 
@@ -437,11 +449,7 @@ def build(content_json, out_path, per_slide=3):
     """content_json(정현지 스키마) -> 새 PPTX 파일 생성"""
     prs = new_presentation()
     cover = content_json.get("cover", {})
-    build_cover_slide(
-        prs, cover, content_json.get("watermark_label", ""),
-        product_meta=content_json.get("product_meta"),
-        hashtags=content_json.get("hashtags"),
-    )
+    build_cover_slide(prs, cover, content_json.get("watermark_label", ""))
     build_background_slide(prs, content_json.get("background_story"))
     build_reasons_slide(prs, content_json.get("why_reasons"))
     build_destination_slides(
@@ -465,6 +473,6 @@ def build(content_json, out_path, per_slide=3):
     )
     build_season_slide(prs, content_json.get("season", {}), content_json.get("season_table"))
     build_safety_slide(prs, content_json.get("altitude_profile"), content_json.get("safety_note"))
-    build_banner_request_slide(prs, cover.get("product_name", ""))
+    build_banner_request_slide(prs, cover)
     prs.save(out_path)
     return prs
