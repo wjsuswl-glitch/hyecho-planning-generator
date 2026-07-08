@@ -66,7 +66,7 @@ if uploaded and st.button("생성하기", type="primary"):
         try:
             with st.spinner("PPTX 조립 중..."):
                 out_path = tmp_path.replace(".docx", "_결과.pptx")
-                if writer_style in ("정현지", "박소설"):
+                if writer_style in ("정현지", "박소설", "신윤정"):
                     # v2: 옛 기획안을 열어 덮어쓰지 않고, 매번 새로 슬라이드를 생성
                     dynamic_builder.build(content, out_path)
                     log = [("dynamic_build", "OK — 새 슬라이드로 생성됨 (템플릿 재사용 없음)")]
