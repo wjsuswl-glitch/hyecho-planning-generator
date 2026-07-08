@@ -302,6 +302,7 @@ def build_highlights_slides(prs, highlights, heading=None):
     """번호 매긴 여정 하이라이트 카드 (destinations와 별개 — 더 큰 테마 단위)"""
     if not highlights:
         return []
+    heading = heading or "여정 하이라이트"  # AI가 빠뜨려도 타이틀 없는 슬라이드가 나가지 않도록 기본값
     slides = []
     bottom_limit = SLIDE_H - Inches(0.3)
     idx = 0
