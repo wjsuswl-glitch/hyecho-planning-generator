@@ -37,7 +37,6 @@ SCHEMA_HINTS = {
     "routes": [ {"name": str, "course": str, "scenery": str, "appeal": str, "summary": str} ]
   },
   "brand_tagline": str,
-  "brand_points": [str, str],
   "experience_points": [ {"title": str, "description": str} ],
   "highlights_heading": str,
   "highlights": [ {"title": str, "description": str} ],
@@ -82,7 +81,7 @@ SCHEMA_HINTS = {
   일반 하이킹은 "난이도" 등 카테고리에 맞는 안전/난이도 안내가 필요한 상품에만 채우세요.
   해당 없는 상품(저지대 여행 등)이면 둘 다 빈 값/생략하세요. safety_note는 혜초 홈페이지의
   표준 안내 톤(과장 없이 사실 위주)을 따르세요.
-※ 사업부 자료에 정보가 부족한 필드(예: brand_points, experience_points 문구)는 빈 값으로 두지
+※ 사업부 자료에 정보가 부족한 필드(예: experience_points 문구)는 빈 값으로 두지
   말고, 사업부 자료의 사실에 기반해 정현지 문체로 자연스럽게 채워서 완성하세요. 단, destinations나
   route_compare, season_table처럼 사실 데이터가 필요한 항목에 없는 내용을 새로 지어내는 것은
   금지입니다 — 채우기는 "표현"에 대한 것이지 "사실 날조"가 아닙니다.""",
