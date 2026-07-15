@@ -96,6 +96,15 @@ def add_image_placeholder(slide, left, top, width, height, label="이미지"):
     return box
 
 
+def add_small_image_placeholder(slide, top, width, height, label="이미지"):
+    """전체 폭을 다 차지하는 큰 이미지 자리 대신, 가로 폭도 훨씬 좁힌 작은 썸네일
+    크기 자리표시. CONTENT_W 안에서 가운데 정렬해서 배치한다. 실제 사진은 디자이너가
+    작업하므로, 여기서는 '사진이 들어갈 위치'만 작게 표시하고 나머지 공간은 텍스트가
+    위로 당겨져 채우게 한다."""
+    left = MARGIN + (CONTENT_W - width) / 2
+    return add_image_placeholder(slide, left, top, width, height, label)
+
+
 def new_presentation():
     prs = Presentation()
     prs.slide_width = SLIDE_W
@@ -125,8 +134,8 @@ def build_cover_slide(prs, cover, watermark_label=""):
                   size=13, color=MUTED_COLOR, align=PP_ALIGN.CENTER)
         y += Inches(0.45)
     y += Inches(0.15)
-    add_image_placeholder(slide, MARGIN, y, CONTENT_W, Inches(2.0), "메인 이미지")
-    y += Inches(2.2)
+    add_small_image_placeholder(slide, y, Inches(2.6), Inches(1.1), "메인 이미지")
+    y += Inches(1.25)
     if cover.get("subtitle"):
         add_text(slide, MARGIN, y, CONTENT_W, Inches(0.4), cover["subtitle"],
                   size=14, bold=True, align=PP_ALIGN.CENTER)
@@ -169,7 +178,7 @@ def build_destination_slides(prs, destinations, section_title=None, theme_line=N
             dest = destinations[idx]
             region_tag = dest.get("region_tag")
             title_h = estimate_text_height(dest.get("title", ""), 15, CONTENT_W, bold=True)
-            image_h = Inches(1.0)
+            image_h = Inches(0.6)
             desc_h = estimate_text_height(dest.get("description", ""), 12, CONTENT_W)
             block_h = (Inches(0.35) if region_tag else Inches(0)) + title_h + Inches(0.1) \
                 + image_h + Inches(0.15) + desc_h + Inches(0.3)
@@ -184,7 +193,7 @@ def build_destination_slides(prs, destinations, section_title=None, theme_line=N
             add_text(slide, MARGIN, y, CONTENT_W, title_h, dest.get("title", ""),
                       size=15, bold=True)
             y += title_h + Inches(0.1)
-            add_image_placeholder(slide, MARGIN, y, CONTENT_W, image_h, "이미지")
+            add_small_image_placeholder(slide, y, Inches(1.8), image_h, "이미지")
             y += image_h + Inches(0.15)
             add_text(slide, MARGIN, y, CONTENT_W, desc_h, dest.get("description", ""),
                       size=12, color=MUTED_COLOR)
@@ -322,7 +331,7 @@ def build_highlights_slides(prs, highlights, heading=None):
             item = highlights[idx]
             num_label = f"{idx + 1:02d}"
             title_h = estimate_text_height(item.get("title", ""), 14, CONTENT_W, bold=True)
-            image_h = Inches(1.0)
+            image_h = Inches(0.6)
             desc_h = estimate_text_height(item.get("description", ""), 11, CONTENT_W)
             block_h = Inches(0.3) + title_h + Inches(0.1) + image_h + Inches(0.15) + desc_h + Inches(0.3)
             if placed_any and y + block_h > bottom_limit:
@@ -332,7 +341,7 @@ def build_highlights_slides(prs, highlights, heading=None):
             y += Inches(0.35)
             add_text(slide, MARGIN, y, CONTENT_W, title_h, item.get("title", ""), size=14, bold=True)
             y += title_h + Inches(0.1)
-            add_image_placeholder(slide, MARGIN, y, CONTENT_W, image_h, "이미지")
+            add_small_image_placeholder(slide, y, Inches(1.8), image_h, "이미지")
             y += image_h + Inches(0.15)
             add_text(slide, MARGIN, y, CONTENT_W, desc_h, item.get("description", ""), size=11,
                       color=MUTED_COLOR)
@@ -395,9 +404,9 @@ def build_season_slide(prs, season, season_table=None):
     add_text(slide, MARGIN, y, CONTENT_W, content_h, season.get("content", ""), size=12)
     y += content_h + Inches(0.3)
     if season_table:
-        add_image_placeholder(slide, MARGIN, y, CONTENT_W, Inches(1.2),
+        add_image_placeholder(slide, MARGIN, y, CONTENT_W, Inches(0.7),
                                "월별 기온 차트 (자리표시 — 실제 그래픽은 디자이너 작업)")
-        y += Inches(1.35)
+        y += Inches(0.85)
         header = "  ".join(f"{row.get('month','')}" for row in season_table)
         add_text(slide, MARGIN, y, CONTENT_W, Inches(0.3), header, size=10, color=MUTED_COLOR,
                   align=PP_ALIGN.CENTER)
