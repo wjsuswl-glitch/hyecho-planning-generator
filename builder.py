@@ -125,8 +125,8 @@ def build_cover_slide(prs, cover, watermark_label=""):
                   size=13, color=MUTED_COLOR, align=PP_ALIGN.CENTER)
         y += Inches(0.45)
     y += Inches(0.15)
-    add_image_placeholder(slide, MARGIN, y, CONTENT_W, Inches(3.2), "메인 이미지")
-    y += Inches(3.4)
+    add_image_placeholder(slide, MARGIN, y, CONTENT_W, Inches(2.0), "메인 이미지")
+    y += Inches(2.2)
     if cover.get("subtitle"):
         add_text(slide, MARGIN, y, CONTENT_W, Inches(0.4), cover["subtitle"],
                   size=14, bold=True, align=PP_ALIGN.CENTER)
@@ -169,7 +169,7 @@ def build_destination_slides(prs, destinations, section_title=None, theme_line=N
             dest = destinations[idx]
             region_tag = dest.get("region_tag")
             title_h = estimate_text_height(dest.get("title", ""), 15, CONTENT_W, bold=True)
-            image_h = Inches(1.6)
+            image_h = Inches(1.0)
             desc_h = estimate_text_height(dest.get("description", ""), 12, CONTENT_W)
             block_h = (Inches(0.35) if region_tag else Inches(0)) + title_h + Inches(0.1) \
                 + image_h + Inches(0.15) + desc_h + Inches(0.3)
@@ -217,12 +217,17 @@ def build_background_slide(prs, background_story):
     return slide
 
 
-def build_reasons_slide(prs, why_reasons):
-    """'왜 사천성인가' 같은 이유 N가지 슬라이드"""
+def build_reasons_slide(prs, why_reasons, product_name=""):
+    """'왜 사천성인가' 같은 이유 N가지 슬라이드.
+    타이틀은 AI에게 맡기지 않고 "{상품명} 포인트 0N" 형태로 코드에서 자동 생성한다
+    (개수 기반 기계적 표기라 AI보다 코드가 더 정확함)."""
     if not why_reasons:
         return None
     slide = _blank_slide(prs)
     y = Inches(0.4)
+    heading = f"{product_name} 포인트 {len(why_reasons):02d}".strip()
+    add_section_bar(slide, y, heading)
+    y += Inches(0.6)
     for reason in why_reasons:
         title_h = estimate_text_height(reason.get("title", ""), 15, CONTENT_W, bold=True)
         add_text(slide, MARGIN, y, CONTENT_W, title_h, reason.get("title", ""),
@@ -264,20 +269,18 @@ def build_route_compare_slide(prs, route_compare):
     return slide
 
 
-def build_experience_slide(prs, brand_tagline, brand_points, experience_points):
-    """브랜드 소구 + 경험 포인트(아이콘 카드 N개)"""
+def build_experience_slide(prs, brand_tagline, experience_points):
+    """브랜드 소구 문구 + 경험 포인트(아이콘 카드 N개).
+    예전엔 brand_points(불릿 목록)를 따로 받아 여기 같이 나열했는데, experience_points와
+    내용이 거의 그대로 중복되는 문제가 있어(예: '노쇼핑/노옵션'이 두 번 나옴) brand_points는
+    제거하고 experience_points 하나로 통일한다."""
     slide = _blank_slide(prs)
     y = Inches(0.4)
     if brand_tagline:
         h = estimate_text_height(brand_tagline, 16, CONTENT_W, bold=True)
         add_text(slide, MARGIN, y, CONTENT_W, h, brand_tagline, size=16, bold=True,
                   align=PP_ALIGN.CENTER)
-        y += h + Inches(0.2)
-    for point in (brand_points or []):
-        h = estimate_text_height(point, 13, CONTENT_W)
-        add_text(slide, MARGIN, y, CONTENT_W, h, f"· {point}", size=13)
-        y += h + Inches(0.1)
-    y += Inches(0.3)
+        y += h + Inches(0.3)
     if experience_points:
         col_w = CONTENT_W / len(experience_points)
         for i, ep in enumerate(experience_points):
@@ -319,7 +322,7 @@ def build_highlights_slides(prs, highlights, heading=None):
             item = highlights[idx]
             num_label = f"{idx + 1:02d}"
             title_h = estimate_text_height(item.get("title", ""), 14, CONTENT_W, bold=True)
-            image_h = Inches(1.5)
+            image_h = Inches(1.0)
             desc_h = estimate_text_height(item.get("description", ""), 11, CONTENT_W)
             block_h = Inches(0.3) + title_h + Inches(0.1) + image_h + Inches(0.15) + desc_h + Inches(0.3)
             if placed_any and y + block_h > bottom_limit:
@@ -392,9 +395,9 @@ def build_season_slide(prs, season, season_table=None):
     add_text(slide, MARGIN, y, CONTENT_W, content_h, season.get("content", ""), size=12)
     y += content_h + Inches(0.3)
     if season_table:
-        add_image_placeholder(slide, MARGIN, y, CONTENT_W, Inches(1.8),
+        add_image_placeholder(slide, MARGIN, y, CONTENT_W, Inches(1.2),
                                "월별 기온 차트 (자리표시 — 실제 그래픽은 디자이너 작업)")
-        y += Inches(1.95)
+        y += Inches(1.35)
         header = "  ".join(f"{row.get('month','')}" for row in season_table)
         add_text(slide, MARGIN, y, CONTENT_W, Inches(0.3), header, size=10, color=MUTED_COLOR,
                   align=PP_ALIGN.CENTER)
@@ -452,7 +455,7 @@ def build(content_json, out_path, per_slide=3):
     cover = content_json.get("cover", {})
     build_cover_slide(prs, cover, content_json.get("watermark_label", ""))
     build_background_slide(prs, content_json.get("background_story"))
-    build_reasons_slide(prs, content_json.get("why_reasons"))
+    build_reasons_slide(prs, content_json.get("why_reasons"), product_name=cover.get("product_name", ""))
     build_destination_slides(
         prs,
         content_json.get("destinations", []),
@@ -464,7 +467,6 @@ def build(content_json, out_path, per_slide=3):
     build_experience_slide(
         prs,
         content_json.get("brand_tagline", ""),
-        content_json.get("brand_points", []),
         content_json.get("experience_points"),
     )
     build_highlights_slides(
