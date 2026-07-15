@@ -3,7 +3,7 @@ import streamlit as st
 import tempfile, os, json, sys
 
 sys.path.insert(0, os.path.dirname(__file__))
-from parser import parse_docx, detect_format_and_draft_copy
+from parser import parse_docx, detect_format_and_draft_copy, parse_pptx, encode_image_block
 from prompt_builder import build_system_prompt
 from generator import generate_content
 from assembler import assemble
@@ -13,7 +13,7 @@ TEMPLATE_MAP_PATH = os.path.join(os.path.dirname(__file__), "template_map.json")
 
 st.set_page_config(page_title="혜초 기획안 자동생성", page_icon="🧳")
 st.title("🧳 혜초여행 기획안 자동생성")
-st.caption("사업부 원본자료(docx) → AI 카피 생성 → 기획안 PPTX")
+st.caption("사업부 원본자료(docx/pptx/이미지, 최대 5개) → AI 카피 생성 → 기획안 PPTX")
 
 with open(TEMPLATE_MAP_PATH, encoding="utf-8") as f:
     available_styles = list(json.load(f).keys())
@@ -24,27 +24,75 @@ with col1:
 with col2:
     category = st.selectbox("카테고리", ["문탐", "트레킹"])
 
-uploaded = st.file_uploader("사업부 원본자료 업로드 (.docx)", type=["docx"])
+MAX_FILES = 5
+uploaded_files = st.file_uploader(
+    "사업부 원본자료 업로드 (.docx, .pptx, 이미지 — 최대 5개, 그중 .docx 최소 1개 필요)",
+    type=["docx", "pptx", "jpg", "jpeg", "png"],
+    accept_multiple_files=True,
+)
+
+if uploaded_files and len(uploaded_files) > MAX_FILES:
+    st.error(f"파일은 최대 {MAX_FILES}개까지만 업로드할 수 있어요. "
+             f"지금 {len(uploaded_files)}개가 선택됐어요 — {len(uploaded_files) - MAX_FILES}개를 빼주세요.")
+    uploaded_files = None
 
 has_api_key = bool(os.environ.get("ANTHROPIC_API_KEY"))
 if not has_api_key:
     st.warning("ANTHROPIC_API_KEY가 설정되지 않았어요. 지금은 프롬프트 미리보기까지만 가능해요. "
                "터미널에서 `export ANTHROPIC_API_KEY=\"키\"` 설정 후 앱을 다시 실행하면 실제 생성이 가능합니다.")
 
-if uploaded and st.button("생성하기", type="primary"):
-    with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as tmp:
-        tmp.write(uploaded.read())
-        tmp_path = tmp.name
+if uploaded_files and st.button("생성하기", type="primary"):
+    # 확장자별로 분류: docx/pptx는 텍스트 파싱해서 sections에 병합, 이미지는 별도로 모아서
+    # 나중에 API 멀티모달 메시지에 그대로 첨부한다.
+    tmp_paths = []
+    docx_files, pptx_files, image_files = [], [], []
+    for uf in uploaded_files:
+        ext = os.path.splitext(uf.name)[1].lower()
+        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+            tmp.write(uf.read())
+            tmp_path = tmp.name
+        tmp_paths.append(tmp_path)
+        if ext == ".docx":
+            docx_files.append((uf.name, tmp_path))
+        elif ext == ".pptx":
+            pptx_files.append((uf.name, tmp_path))
+        elif ext in (".jpg", ".jpeg", ".png"):
+            image_files.append((uf.name, tmp_path))
+
+    if not docx_files:
+        st.error("사업부 원본자료(.docx)가 최소 1개는 있어야 해요. "
+                 "PPT/이미지는 보조 자료로만 쓰이고, 기준이 되는 워드 문서가 필요합니다.")
+        st.stop()
 
     with st.spinner("사업부 자료 파싱 중..."):
-        sections = parse_docx(tmp_path)
+        # 첫 번째 docx를 기준 문서로 사용 (유형 판별 · 카피 초안 감지는 이 문서 기준)
+        primary_name, primary_path = docx_files[0]
+        sections = parse_docx(primary_path)
         format_info = detect_format_and_draft_copy(sections)
 
-    st.success(f"파싱 완료 — 유형 {format_info['format_type']}, "
-               f"카피 초안 {'있음 (다듬기 모드)' if format_info['draft_copy'] else '없음 (창작 모드)'}")
+        # 나머지 docx/pptx는 보조 자료로 병합 (키 충돌 방지를 위해 파일명으로 접두)
+        for name, path in docx_files[1:]:
+            extra = parse_docx(path)
+            for k, v in extra.items():
+                sections[f"[추가자료: {name}] {k}"] = v
+        for name, path in pptx_files:
+            extra = parse_pptx(path)
+            for k, v in extra.items():
+                sections[f"[추가자료: {name}] {k}"] = v
+
+        image_blocks = [encode_image_block(path) for _, path in image_files]
+
+    extra_count = len(docx_files) - 1 + len(pptx_files) + len(image_files)
+    st.success(
+        f"파싱 완료 — 유형 {format_info['format_type']}, "
+        f"카피 초안 {'있음 (다듬기 모드)' if format_info['draft_copy'] else '없음 (창작 모드)'}"
+        + (f" · 보조 자료 {extra_count}개 반영(pptx/추가 docx {len(docx_files) - 1 + len(pptx_files)}개, "
+           f"이미지 {len(image_files)}개)" if extra_count else "")
+    )
 
     with st.spinner("프롬프트 조립 중..."):
-        prompt = build_system_prompt(writer_style, category, sections, format_info)
+        prompt = build_system_prompt(writer_style, category, sections, format_info,
+                                      has_images=bool(image_blocks))
 
     with st.expander("조립된 프롬프트 보기"):
         st.text(prompt[:3000])
@@ -54,7 +102,7 @@ if uploaded and st.button("생성하기", type="primary"):
     else:
         try:
             with st.spinner("AI 카피 생성 중..."):
-                content = generate_content(prompt)
+                content = generate_content(prompt, image_blocks=image_blocks)
         except Exception as e:
             st.error(f"AI 콘텐츠 생성 중 오류가 발생했습니다:\n\n{e}")
             st.stop()
@@ -65,7 +113,7 @@ if uploaded and st.button("생성하기", type="primary"):
 
         try:
             with st.spinner("PPTX 조립 중..."):
-                out_path = tmp_path.replace(".docx", "_결과.pptx")
+                out_path = primary_path.replace(".docx", "_결과.pptx")
                 if writer_style in ("정현지", "박소설", "신윤정"):
                     # v2: 옛 기획안을 열어 덮어쓰지 않고, 매번 새로 슬라이드를 생성
                     dynamic_builder.build(content, out_path)
@@ -110,7 +158,11 @@ if uploaded and st.button("생성하기", type="primary"):
         with open(out_path, "rb") as f:
             st.download_button("📥 PPTX 다운로드", f, file_name=f"{safe_name}_기획안.pptx")
 
-    os.unlink(tmp_path)
+    for p in tmp_paths:
+        try:
+            os.unlink(p)
+        except OSError:
+            pass
 
 st.divider()
 st.caption(f"현재 등록된 템플릿: {', '.join(available_styles)}")
