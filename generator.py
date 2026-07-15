@@ -1,7 +1,7 @@
 """Claude API 호출 모듈 — ANTHROPIC_API_KEY 환경변수 필요"""
 import os, json
 
-def generate_content(system_prompt, dry_run=False):
+def generate_content(system_prompt, image_blocks=None, dry_run=False):
     if dry_run or not os.environ.get("ANTHROPIC_API_KEY"):
         return {
             "_dry_run": True,
@@ -11,13 +11,21 @@ def generate_content(system_prompt, dry_run=False):
 
     import anthropic
     client = anthropic.Anthropic()
+
+    # 이미지가 첨부되면 텍스트 프롬프트 뒤에 이미지 블록들을 이어붙여 멀티모달 메시지로 전송.
+    # 이미지가 없으면 기존과 동일하게 순수 텍스트 문자열 그대로 보낸다 (하위 호환).
+    if image_blocks:
+        content = [{"type": "text", "text": system_prompt}] + list(image_blocks)
+    else:
+        content = system_prompt
+
     resp = client.messages.create(
         model="claude-sonnet-5",
         max_tokens=8000,
         thinking={"type": "disabled"},  # 구조화된 JSON 생성엔 추론 불필요.
         # thinking을 켜두면 max_tokens가 "생각+응답" 합산 한도라
         # 응답이 완성되기 전에 잘릴 수 있음 (Sonnet 5부터 기본으로 켜져 있음)
-        messages=[{"role": "user", "content": system_prompt}],
+        messages=[{"role": "user", "content": content}],
     )
     text = "".join(b.text for b in resp.content if b.type == "text")
     text = text.strip()
