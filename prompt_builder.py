@@ -113,7 +113,7 @@ def load_fewshot_examples(writer_style, category, k=3):
     picked = (same[:2] + other_cat[:1])[:k]
     return picked
 
-def build_system_prompt(writer_style, category, parsed_sections, format_info):
+def build_system_prompt(writer_style, category, parsed_sections, format_info, has_images=False):
     examples = load_fewshot_examples(writer_style, category)
     draft_copy = format_info.get("draft_copy")
 
@@ -170,5 +170,12 @@ why_hyecho와 season 섹션은 {"같은 슬라이드에 합쳐서" if LAYOUT_HIN
 
 [실제 입력 — 사업부 원본자료 파싱 결과 (이 내용만을 근거로 생성)]
 {json.dumps(parsed_sections, ensure_ascii=False, indent=2)}
+{"""
+[첨부 이미지]
+이 메시지에는 사업부에서 제공한 이미지 파일(사진, 지도, 옛 자료 스크린샷 등)이 함께
+첨부되어 있습니다. 이미지 안에 보이는 지명, 설명, 표, 일정 같은 실제 정보도 위 텍스트
+자료와 동등한 '사업부 원본자료'로 취급해 반영하세요. 다만 이미지가 단순 풍경/분위기
+참고용인 경우 억지로 사실 정보를 추출하려 하지 말고, 명확히 읽을 수 있는 텍스트/데이터만
+사용하세요.""" if has_images else ""}
 """
     return prompt
