@@ -249,6 +249,72 @@ def build_reasons_slide(prs, why_reasons, product_name=""):
     return slide
 
 
+def build_transport_slide(prs, transport_spec):
+    """열차/크루즈처럼 이동수단 자체가 상품의 핵심 매력인 경우의 스펙 슬라이드.
+    안나푸르나(2296 남극 크루즈), 호주 더 간 열차(1827) 상품설명 이미지 분석에서
+    반복 확인된 "이동수단 스펙표"(객실타입/부대시설/톤수/안전등급 등) 패턴을 반영."""
+    if not transport_spec or not transport_spec.get("specs"):
+        return None
+    slide = _blank_slide(prs)
+    y = Inches(0.4)
+    if transport_spec.get("title"):
+        add_section_bar(slide, y, transport_spec["title"])
+        y += Inches(0.6)
+    add_small_image_placeholder(slide, y, Inches(2.6), Inches(1.1), "이동수단 이미지")
+    y += Inches(1.25)
+    for spec in transport_spec["specs"]:
+        label = spec.get("label", "")
+        value = spec.get("value", "")
+        row_h = estimate_text_height(f"{label}: {value}", 12, CONTENT_W)
+        add_text(slide, MARGIN, y, Inches(1.6), row_h, label, size=12, bold=True, color=ACCENT_COLOR)
+        add_text(slide, MARGIN + Inches(1.7), y, CONTENT_W - Inches(1.7), row_h, value, size=12)
+        y += row_h + Inches(0.1)
+    return slide
+
+
+def build_guide_slide(prs, guide_profile):
+    """인솔자/가이드/담당 임원 프로필 슬라이드. 제주도 가이드 이력, 산티아고 인솔자
+    경력 카드, 트레킹(킬리만자로 40회 등정 임원) 상품설명 이미지에서 반복 확인된
+    "회사 구성원 신뢰 요소" 패턴을 반영."""
+    if not guide_profile:
+        return None
+    slide = _blank_slide(prs)
+    y = Inches(0.4)
+    add_section_bar(slide, y, "함께하는 사람들")
+    y += Inches(0.6)
+    for guide in guide_profile:
+        add_small_image_placeholder(slide, y, Inches(1.3), Inches(1.3), "프로필 사진")
+        y += Inches(1.4)
+        name_title = guide.get("name", "")
+        if guide.get("title"):
+            name_title = f"{name_title}  ({guide['title']})" if name_title else guide["title"]
+        add_text(slide, MARGIN, y, CONTENT_W, Inches(0.3), name_title, size=13, bold=True,
+                  align=PP_ALIGN.CENTER)
+        y += Inches(0.35)
+        bio_h = estimate_text_height(guide.get("bio", ""), 11, CONTENT_W)
+        add_text(slide, MARGIN, y, CONTENT_W, bio_h, guide.get("bio", ""), size=11,
+                  color=MUTED_COLOR, align=PP_ALIGN.CENTER)
+        y += bio_h + Inches(0.3)
+    return slide
+
+
+def build_meal_slide(prs, meal_info):
+    """"트레킹/여행 중 식사는 어떻게 하나요?" 실용 정보 Q&A 슬라이드. 일본알프스,
+    키르기즈스탄, 마칼루, 하얼빈 등 지역이 전혀 다른 다수 상품에서 반복 확인된
+    패턴으로, safety_note와 동일한 question/answer 구조를 재사용."""
+    if not meal_info or not meal_info.get("question"):
+        return None
+    slide = _blank_slide(prs)
+    y = Inches(0.4)
+    add_text(slide, MARGIN, y, CONTENT_W, Inches(0.4), meal_info["question"], size=15,
+              bold=True, align=PP_ALIGN.CENTER)
+    y += Inches(0.5)
+    ans_h = estimate_text_height(meal_info.get("answer", ""), 12, CONTENT_W)
+    add_text(slide, MARGIN, y, CONTENT_W, ans_h, meal_info.get("answer", ""), size=12,
+              align=PP_ALIGN.CENTER)
+    return slide
+
+
 def build_route_compare_slide(prs, route_compare):
     """두 노선/코스를 비교하는 표 슬라이드"""
     if not route_compare or not route_compare.get("routes"):
@@ -383,7 +449,10 @@ def build_safety_slide(prs, altitude_profile, safety_note):
         for i, stop in enumerate(altitude_profile):
             x = MARGIN + col_w * i
             label = f"{stop.get('name','')}\n{stop.get('altitude','')}"
-            add_text(slide, x + gap, y, col_w - gap * 2, Inches(0.5), label, size=9, align=PP_ALIGN.CENTER)
+            extra = " / ".join(v for v in (stop.get("distance"), stop.get("duration")) if v)
+            if extra:
+                label += f"\n{extra}"
+            add_text(slide, x + gap, y, col_w - gap * 2, Inches(0.65), label, size=9, align=PP_ALIGN.CENTER)
     return slide
 
 
@@ -473,17 +542,20 @@ def build(content_json, out_path, per_slide=3):
         per_slide=per_slide,
     )
     build_route_compare_slide(prs, content_json.get("route_compare"))
+    build_transport_slide(prs, content_json.get("transport_spec"))
     build_experience_slide(
         prs,
         content_json.get("brand_tagline", ""),
         content_json.get("experience_points"),
     )
+    build_guide_slide(prs, content_json.get("guide_profile"))
     build_highlights_slides(
         prs,
         content_json.get("highlights"),
         heading=content_json.get("highlights_heading"),
     )
     build_season_slide(prs, content_json.get("season", {}), content_json.get("season_table"))
+    build_meal_slide(prs, content_json.get("meal_info"))
     build_safety_slide(prs, content_json.get("altitude_profile"), content_json.get("safety_note"))
     build_banner_request_slide(prs, cover)
     prs.save(out_path)

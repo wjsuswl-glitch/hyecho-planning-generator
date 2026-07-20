@@ -28,6 +28,7 @@ SCHEMA_HINTS = {
     "정현지": """{
   "cover": {"tagline": str, "product_name": str, "region_tag": str, "subtitle": str, "intro_copy": str},
   "watermark_label": str,
+  "product_variant_type": str,
   "background_story": {"kicker": str, "title": str, "content": str},
   "why_reasons": [ {"title": str, "content": str} ],
   "destinations_heading": str,
@@ -36,13 +37,16 @@ SCHEMA_HINTS = {
     "title": str,
     "routes": [ {"name": str, "course": str, "scenery": str, "appeal": str, "summary": str} ]
   },
+  "transport_spec": {"title": str, "specs": [ {"label": str, "value": str} ]},
   "brand_tagline": str,
   "experience_points": [ {"title": str, "description": str} ],
+  "guide_profile": [ {"name": str, "title": str, "bio": str} ],
   "highlights_heading": str,
   "highlights": [ {"title": str, "description": str} ],
   "season": {"title": str, "content": str, "stat_line": str},
   "season_table": [ {"month": str, "high": str, "low": str} ],
-  "altitude_profile": [ {"name": str, "altitude": str} ],
+  "meal_info": {"question": str, "answer": str},
+  "altitude_profile": [ {"name": str, "altitude": str, "distance": str, "duration": str} ],
   "safety_note": {"question": str, "answer": str}
 }
 ※ cover.tagline: 표지 맨 위에 작게 들어가는 짧은 감성 문구 (2줄 이내, 꾸미는 말)
@@ -57,11 +61,17 @@ SCHEMA_HINTS = {
   설명하는 메타 문구("상품 소개 기획안", "디자인팀 전달용", "기획안입니다" 등)는 절대
   쓰지 마세요 — 그런 문구는 실제 고객이 보는 화면에 그대로 노출되는 심각한 오류입니다.
 ※ watermark_label: 표지 우상단에 작게 들어가는 영문 1~2단어 (여정/지역명)
+※ product_variant_type: 상품의 이동수단/난이도 성격 태그입니다. "육상"(일반 도보·차량
+  이동 여정), "크루즈"(선박이 핵심 이동수단), "고소·극한등반"(6,000m급 이상이거나 신청
+  자격 제한이 있는 등반) 중 사업부 자료 내용에 맞는 하나를 고르세요. 애매하면 "육상"으로
+  두세요.
 ※ background_story: "OOO란?" 같은 여행지/노선의 배경·역사·유래를 설명하는 섹션입니다.
   사업부 자료에 이런 배경 설명이 없으면, 잘 알려진 일반 상식 수준에서만 채우고
   구체적 사실(연도, 수치 등)을 지어내지 마세요.
 ※ why_reasons: "왜 이 지역/노선인가"를 설명하는 이유 목록입니다. 실제 입력 내용에 근거해
-  2~4개 작성하세요.
+  2~4개 작성하세요. 타사 대비 명확한 차별점(유일 노선, 전문 인솔자 동행 등)이 사업부
+  자료에 있다면 "~와는 다릅니다", "비교해보면 답은 혜초" 같은 직접적인 비교 어조도
+  자연스럽게 쓸 수 있습니다 — 다만 실제로 비교할 근거가 있을 때만 이 톤을 쓰세요.
 ※ destinations: 위 예시는 배열 안에 원소 1개만 보여준 것입니다. 실제로는
   {"title": str, "description": str, "region_tag": str} 형태의 원소를 실제 입력에 있는 개수만큼
   반복하세요. region_tag는 그 목적지가 속한 지역/국가/성(省) 이름이며, 없으면 빈 문자열로 두세요.
@@ -69,9 +79,16 @@ SCHEMA_HINTS = {
   (너무 길면 레이아웃이 깨집니다).
 ※ route_compare: 사업부 자료에 대안 코스/노선 비교 내용이 있을 때만 채우세요. 없으면
   routes를 빈 배열로 두세요 (있지도 않은 대안 코스를 지어내지 마세요).
+※ transport_spec: 열차·크루즈처럼 이동수단 자체가 상품의 핵심 매력인 경우에만 채우세요
+  (예: "The Ghan 럭셔리 열차", "모션 알바트로스 크루즈"). specs는 객실타입/부대시설/톤수/
+  안전등급처럼 사업부 자료에 실제로 있는 스펙만 담으세요. 일반적인 항공/버스 이동에는
+  채우지 말고 title을 빈 문자열, specs를 빈 배열로 두세요.
 ※ destinations_heading: 목적지 소개 섹션의 제목입니다 (예: "OOO 하이라이트"). brand_tagline과는
   다른 문구로 작성하세요 (같은 말 반복 금지).
 ※ experience_points: 노쇼핑/편안한 이동/독보적 일정 같은 "혜초만의 차별점" 카드 2~3개.
+※ guide_profile: 인솔자·가이드·담당자의 실제 이력(경력, 등정/순례 횟수, 자격 등)이
+  사업부 자료에 있을 때만 채우세요. 있지도 않은 인물이나 이력을 지어내지 마세요. 없으면
+  빈 배열로 두세요.
 ※ highlights_heading, highlights: destinations와는 다른, 더 큰 테마 단위의 "여정 하이라이트"
   입니다 (예: "국내 유일 육로 횡단", "매일 변화하는 풍경", "문화의 공존" 등 3~4개). 특정
   지명 하나가 아니라 여정 전체를 관통하는 주제로 작성하세요.
@@ -80,14 +97,21 @@ SCHEMA_HINTS = {
 ※ season.stat_line: 계절 섹션 상단의 짧은 강조 배너 문구 (예: "최적기: O월~O월")
 ※ season_table: 월별 기온 등 계절 통계가 사업부 자료에 있을 때만 채우세요. 없으면 빈
   배열로 두세요.
+※ meal_info: "여행/트레킹 중 식사는 어떻게 하나요?" 같은 실용 정보 Q&A입니다. safety_note와
+  같은 형식(question/answer)이며, 사업부 자료에 식사 관련 정보(산장식/현지식/포함 여부 등)가
+  있을 때만 채우세요. 없으면 question, answer 모두 빈 문자열로 두세요.
 ※ altitude_profile, safety_note: 고산 트레킹은 "고산증", 도보순례는 "체력/보험",
   일반 하이킹은 "난이도" 등 카테고리에 맞는 안전/난이도 안내가 필요한 상품에만 채우세요.
   해당 없는 상품(저지대 여행 등)이면 둘 다 빈 값/생략하세요. safety_note는 혜초 홈페이지의
-  표준 안내 톤(과장 없이 사실 위주)을 따르세요.
+  표준 안내 톤(과장 없이 사실 위주)을 따르되, 신청 자격 제한이나 환불 불가 조건처럼 사업부
+  자료에 강한 경고성 유의사항이 있다면 완곡하게 순화하지 말고 사실대로 명확히 전달하세요.
+  altitude_profile의 distance(구간 거리, 예: "15km")와 duration(소요시간, 예: "약 6시간")은
+  사업부 자료에 있을 때만 채우고, 없으면 빈 문자열로 두세요.
 ※ 사업부 자료에 정보가 부족한 필드(예: experience_points 문구)는 빈 값으로 두지
   말고, 사업부 자료의 사실에 기반해 정현지 문체로 자연스럽게 채워서 완성하세요. 단, destinations나
-  route_compare, season_table처럼 사실 데이터가 필요한 항목에 없는 내용을 새로 지어내는 것은
-  금지입니다 — 채우기는 "표현"에 대한 것이지 "사실 날조"가 아닙니다.""",
+  route_compare, season_table, transport_spec.specs, guide_profile, meal_info,
+  altitude_profile의 distance/duration처럼 사실 데이터가 필요한 항목에 없는 내용을 새로
+  지어내는 것은 금지입니다 — 채우기는 "표현"에 대한 것이지 "사실 날조"가 아닙니다.""",
     "신윤정": "__SAME_AS_정현지__",
     "박소설": "__SAME_AS_정현지__",
 }
