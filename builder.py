@@ -106,24 +106,51 @@ def add_small_image_placeholder(slide, top, width, height, label="이미지"):
     return add_image_placeholder(slide, left, top, width, height, label)
 
 
-def new_presentation():
-    prs = Presentation()
-    prs.slide_width = SLIDE_W
-    prs.slide_height = SLIDE_H
-    return prs
-
-
 def _blank_slide(prs):
     return prs.slides.add_slide(prs.slide_layouts[6])  # 완전 빈 레이아웃
 
 
+class SlideFlow:
+    """여러 섹션 함수가 슬라이드 하나를 공유해서 이어 쓸 수 있게 하는 커서.
+
+    PPTX는 프레젠테이션 전체가 슬라이드 높이를 하나만 가질 수 있어서(슬라이드별
+    높이 지정 불가), 식사 안내(1.6in)처럼 짧은 섹션도 그동안은 10.83in짜리 슬라이드를
+    통째로 차지해 빈 공간이 컸다. ensure()로 "남은 공간에 들어가면 이어 붙이고,
+    안 들어가면 새 슬라이드"를 섹션마다 판단해 슬라이드 장수와 여백을 줄인다."""
+
+    def __init__(self, prs):
+        self.prs = prs
+        self.slide = None
+        self.y = Inches(0.3)
+        self.bottom_limit = SLIDE_H - Inches(0.2)
+
+    def new_slide(self):
+        self.slide = _blank_slide(self.prs)
+        self.y = Inches(0.3)
+        return self.slide
+
+    def ensure(self, height, gap_before=Inches(0.35)):
+        """다음 섹션(height)을 놓을 자리를 확보한다. 이어 붙일 수 있으면 그 y좌표를,
+        없으면 새 슬라이드를 시작하고 그 y좌표를 반환한다."""
+        if self.slide is None:
+            self.new_slide()
+            return self.y
+        candidate_y = self.y + gap_before
+        if candidate_y + height > self.bottom_limit:
+            self.new_slide()
+            return self.y
+        self.y = candidate_y
+        return self.y
+
+
 # ---------------------------------------------------------------------------
-# 슬라이드 빌더 함수 (정현지 스타일)
+# 슬라이드 빌더 함수 (정현지 스타일) — 모두 SlideFlow를 받아 가능하면 같은
+# 슬라이드에 이어 그리고, 공간이 없을 때만 새 슬라이드를 시작한다.
 # ---------------------------------------------------------------------------
 
-def build_cover_slide(prs, cover, watermark_label=""):
-    slide = _blank_slide(prs)
-    y = Inches(0.5)
+def build_cover_slide(flow, cover, watermark_label=""):
+    slide = flow.new_slide()
+    y = flow.y
     add_text(slide, MARGIN, y, CONTENT_W, Inches(0.5), cover.get("tagline", ""),
               size=13, color=MUTED_COLOR, align=PP_ALIGN.CENTER)
     y += Inches(0.55)
@@ -144,27 +171,31 @@ def build_cover_slide(prs, cover, watermark_label=""):
     intro_h = estimate_text_height(cover.get("intro_copy", ""), 12, CONTENT_W)
     add_text(slide, MARGIN, y, CONTENT_W, intro_h, cover.get("intro_copy", ""),
               size=12, color=MUTED_COLOR, align=PP_ALIGN.CENTER)
+    y += intro_h
     if watermark_label:
         add_text(slide, SLIDE_W - Inches(1.5), Inches(0.15), Inches(1.1), Inches(0.3),
                   watermark_label, size=11, bold=True, color=RGBColor(0xCC, 0xB0, 0x00),
                   align=PP_ALIGN.RIGHT)
+    flow.y = y
     return slide
 
 
-
-def build_destination_slides(prs, destinations, section_title=None, theme_line=None, per_slide=None):
+def build_destination_slides(flow, destinations, section_title=None, theme_line=None):
     """목적지 개수만큼만 슬라이드를 만든다. 고정 개수로 나누지 않고, 실제 텍스트
-    길이를 추정해서 한 슬라이드에 들어갈 수 있는 만큼만 채우고 넘치면 다음 슬라이드로."""
+    길이를 추정해서 한 슬라이드에 들어갈 수 있는 만큼만 채우고 넘치면 다음 슬라이드로.
+    첫 슬라이드는 이전 섹션이 남긴 여백에 이어 붙일 수 있으면 이어 붙인다."""
     if not destinations:
         return []
     slides = []
-    bottom_limit = SLIDE_H - Inches(0.2)
     idx = 0
     first_slide = True
+    header_h = (Inches(0.55) if section_title else Inches(0)) + \
+               (Inches(0.4) if theme_line else Inches(0))
+
     while idx < len(destinations):
-        slide = _blank_slide(prs)
-        y = Inches(0.3)
         if first_slide:
+            y = flow.ensure(header_h + Inches(0.5))  # 헤더 + 항목 하나 들어갈 여유
+            slide = flow.slide
             if section_title:
                 add_section_bar(slide, y, section_title)
                 y += Inches(0.55)
@@ -173,6 +204,9 @@ def build_destination_slides(prs, destinations, section_title=None, theme_line=N
                           size=14, bold=True, align=PP_ALIGN.CENTER)
                 y += Inches(0.4)
             first_slide = False
+        else:
+            slide = flow.new_slide()
+            y = flow.y
 
         placed_any = False
         while idx < len(destinations):
@@ -184,7 +218,7 @@ def build_destination_slides(prs, destinations, section_title=None, theme_line=N
             block_h = (Inches(0.28) if region_tag else Inches(0)) + title_h + Inches(0.06) \
                 + image_h + Inches(0.1) + desc_h + Inches(0.18)
 
-            if placed_any and y + block_h > bottom_limit:
+            if placed_any and y + block_h > flow.bottom_limit:
                 break  # 이 슬라이드엔 더 안 들어감 -> 다음 슬라이드로
 
             if region_tag:
@@ -203,87 +237,117 @@ def build_destination_slides(prs, destinations, section_title=None, theme_line=N
             placed_any = True
             idx += 1
 
+        flow.y = y
         slides.append(slide)
     return slides
 
 
-def build_background_slide(prs, background_story):
-    """'차마고도란?' 같은 배경 이야기 슬라이드"""
+def build_background_slide(flow, background_story):
+    """'차마고도란?' 같은 배경 이야기 섹션"""
     if not background_story:
         return None
-    slide = _blank_slide(prs)
-    y = Inches(0.4)
-    if background_story.get("kicker"):
-        add_text(slide, MARGIN, y, CONTENT_W, Inches(0.35), background_story["kicker"],
+    kicker = background_story.get("kicker", "")
+    title = background_story.get("title", "")
+    content = background_story.get("content", "")
+    content_h = estimate_text_height(content, 12, CONTENT_W)
+    total_h = (Inches(0.4) if kicker else Inches(0)) + (Inches(0.55) if title else Inches(0)) + content_h
+
+    y = flow.ensure(total_h)
+    slide = flow.slide
+    if kicker:
+        add_text(slide, MARGIN, y, CONTENT_W, Inches(0.35), kicker,
                   size=13, color=MUTED_COLOR, align=PP_ALIGN.CENTER)
         y += Inches(0.4)
-    if background_story.get("title"):
-        add_text(slide, MARGIN, y, CONTENT_W, Inches(0.5), background_story["title"],
+    if title:
+        add_text(slide, MARGIN, y, CONTENT_W, Inches(0.5), title,
                   size=20, bold=True, align=PP_ALIGN.CENTER)
         y += Inches(0.55)
-    content = background_story.get("content", "")
-    h = estimate_text_height(content, 12, CONTENT_W)
-    add_text(slide, MARGIN, y, CONTENT_W, h, content, size=12, align=PP_ALIGN.CENTER)
+    add_text(slide, MARGIN, y, CONTENT_W, content_h, content, size=12, align=PP_ALIGN.CENTER)
+    y += content_h
+    flow.y = y
     return slide
 
 
-def build_reasons_slide(prs, why_reasons, product_name=""):
-    """'왜 사천성인가' 같은 이유 N가지 슬라이드.
+def build_reasons_slide(flow, why_reasons, product_name=""):
+    """'왜 사천성인가' 같은 이유 N가지 섹션.
     타이틀은 AI에게 맡기지 않고 "{상품명} 포인트 0N" 형태로 코드에서 자동 생성한다
     (개수 기반 기계적 표기라 AI보다 코드가 더 정확함)."""
     if not why_reasons:
         return None
-    slide = _blank_slide(prs)
-    y = Inches(0.4)
     heading = f"{product_name} 포인트 {len(why_reasons):02d}".strip()
-    add_section_bar(slide, y, heading)
-    y += Inches(0.6)
+    reason_blocks = []
+    total_h = Inches(0.6)
     for reason in why_reasons:
         title_h = estimate_text_height(reason.get("title", ""), 15, CONTENT_W, bold=True)
+        content_h = estimate_text_height(reason.get("content", ""), 12, CONTENT_W)
+        reason_blocks.append((title_h, content_h))
+        total_h += title_h + Inches(0.07) + content_h + Inches(0.22)
+
+    y = flow.ensure(total_h)
+    slide = flow.slide
+    add_section_bar(slide, y, heading)
+    y += Inches(0.6)
+    for reason, (title_h, content_h) in zip(why_reasons, reason_blocks):
         add_text(slide, MARGIN, y, CONTENT_W, title_h, reason.get("title", ""),
                   size=15, bold=True, color=ACCENT_COLOR, align=PP_ALIGN.CENTER)
         y += title_h + Inches(0.07)
-        content_h = estimate_text_height(reason.get("content", ""), 12, CONTENT_W)
         add_text(slide, MARGIN, y, CONTENT_W, content_h, reason.get("content", ""),
                   size=12, align=PP_ALIGN.CENTER)
         y += content_h + Inches(0.22)
+    flow.y = y
     return slide
 
 
-def build_transport_slide(prs, transport_spec):
-    """열차/크루즈처럼 이동수단 자체가 상품의 핵심 매력인 경우의 스펙 슬라이드.
+def build_transport_slide(flow, transport_spec):
+    """열차/크루즈처럼 이동수단 자체가 상품의 핵심 매력인 경우의 스펙 섹션.
     안나푸르나(2296 남극 크루즈), 호주 더 간 열차(1827) 상품설명 이미지 분석에서
     반복 확인된 "이동수단 스펙표"(객실타입/부대시설/톤수/안전등급 등) 패턴을 반영."""
     if not transport_spec or not transport_spec.get("specs"):
         return None
-    slide = _blank_slide(prs)
-    y = Inches(0.4)
-    if transport_spec.get("title"):
-        add_section_bar(slide, y, transport_spec["title"])
-        y += Inches(0.55)
-    add_small_image_placeholder(slide, y, Inches(2.2), Inches(0.85), "이동수단 이미지")
-    y += Inches(0.95)
+    image_h = Inches(0.95)
+    rows = []
+    total_h = (Inches(0.55) if transport_spec.get("title") else Inches(0)) + image_h
     for spec in transport_spec["specs"]:
         label = spec.get("label", "")
         value = spec.get("value", "")
         row_h = estimate_text_height(f"{label}: {value}", 12, CONTENT_W)
+        rows.append((label, value, row_h))
+        total_h += row_h + Inches(0.07)
+
+    y = flow.ensure(total_h)
+    slide = flow.slide
+    if transport_spec.get("title"):
+        add_section_bar(slide, y, transport_spec["title"])
+        y += Inches(0.55)
+    add_small_image_placeholder(slide, y, Inches(2.2), Inches(0.85), "이동수단 이미지")
+    y += image_h
+    for label, value, row_h in rows:
         add_text(slide, MARGIN, y, Inches(1.6), row_h, label, size=12, bold=True, color=ACCENT_COLOR)
         add_text(slide, MARGIN + Inches(1.7), y, CONTENT_W - Inches(1.7), row_h, value, size=12)
         y += row_h + Inches(0.07)
+    flow.y = y
     return slide
 
 
-def build_guide_slide(prs, guide_profile):
-    """인솔자/가이드/담당 임원 프로필 슬라이드. 제주도 가이드 이력, 산티아고 인솔자
+def build_guide_slide(flow, guide_profile):
+    """인솔자/가이드/담당 임원 프로필 섹션. 제주도 가이드 이력, 산티아고 인솔자
     경력 카드, 트레킹(킬리만자로 40회 등정 임원) 상품설명 이미지에서 반복 확인된
     "회사 구성원 신뢰 요소" 패턴을 반영."""
     if not guide_profile:
         return None
-    slide = _blank_slide(prs)
-    y = Inches(0.4)
-    add_section_bar(slide, y, "함께하는 사람들")
-    y += Inches(0.55)
+    header_h = Inches(0.55)
+    bio_heights = []
+    total_h = header_h
     for guide in guide_profile:
+        bio_h = estimate_text_height(guide.get("bio", ""), 11, CONTENT_W)
+        bio_heights.append(bio_h)
+        total_h += Inches(1.18) + Inches(0.25) + bio_h + Inches(0.18)
+
+    y = flow.ensure(total_h)
+    slide = flow.slide
+    add_section_bar(slide, y, "함께하는 사람들")
+    y += header_h
+    for guide, bio_h in zip(guide_profile, bio_heights):
         add_small_image_placeholder(slide, y, Inches(1.1), Inches(1.1), "프로필 사진")
         y += Inches(1.18)
         name_title = guide.get("name", "")
@@ -292,44 +356,51 @@ def build_guide_slide(prs, guide_profile):
         add_text(slide, MARGIN, y, CONTENT_W, Inches(0.28), name_title, size=13, bold=True,
                   align=PP_ALIGN.CENTER)
         y += Inches(0.25)
-        bio_h = estimate_text_height(guide.get("bio", ""), 11, CONTENT_W)
         add_text(slide, MARGIN, y, CONTENT_W, bio_h, guide.get("bio", ""), size=11,
                   color=MUTED_COLOR, align=PP_ALIGN.CENTER)
         y += bio_h + Inches(0.18)
+    flow.y = y
     return slide
 
 
-def build_meal_slide(prs, meal_info):
-    """"트레킹/여행 중 식사는 어떻게 하나요?" 실용 정보 Q&A 슬라이드. 일본알프스,
+def build_meal_slide(flow, meal_info):
+    """"트레킹/여행 중 식사는 어떻게 하나요?" 실용 정보 Q&A 섹션. 일본알프스,
     키르기즈스탄, 마칼루, 하얼빈 등 지역이 전혀 다른 다수 상품에서 반복 확인된
     패턴으로, safety_note와 동일한 question/answer 구조를 재사용."""
     if not meal_info or not meal_info.get("question"):
         return None
-    slide = _blank_slide(prs)
-    y = Inches(0.4)
+    ans_h = estimate_text_height(meal_info.get("answer", ""), 12, CONTENT_W)
+    total_h = Inches(0.5) + ans_h
+
+    y = flow.ensure(total_h)
+    slide = flow.slide
     add_text(slide, MARGIN, y, CONTENT_W, Inches(0.4), meal_info["question"], size=15,
               bold=True, align=PP_ALIGN.CENTER)
     y += Inches(0.5)
-    ans_h = estimate_text_height(meal_info.get("answer", ""), 12, CONTENT_W)
     add_text(slide, MARGIN, y, CONTENT_W, ans_h, meal_info.get("answer", ""), size=12,
               align=PP_ALIGN.CENTER)
+    y += ans_h
+    flow.y = y
     return slide
 
 
-def build_route_compare_slide(prs, route_compare):
-    """두 노선/코스를 비교하는 표 슬라이드"""
+def build_route_compare_slide(flow, route_compare):
+    """두 노선/코스를 비교하는 표 섹션"""
     if not route_compare or not route_compare.get("routes"):
         return None
-    slide = _blank_slide(prs)
-    y = Inches(0.4)
+    routes = route_compare["routes"]
+    row_h = Inches(0.9)
+    header_h = Inches(0.6) if route_compare.get("title") else Inches(0)
+    total_h = header_h + Inches(0.5) + row_h * 4  # 이름줄(0.5) + 기준 4행
+
+    y = flow.ensure(total_h)
+    slide = flow.slide
     if route_compare.get("title"):
         add_section_bar(slide, y, route_compare["title"])
         y += Inches(0.6)
-    routes = route_compare["routes"]
     col_w = CONTENT_W / len(routes)
     criteria = ["course", "scenery", "appeal", "summary"]
     criteria_label = {"course": "코스", "scenery": "풍경", "appeal": "매력", "summary": "한줄 요약"}
-    row_h = Inches(0.9)
     for ri, route in enumerate(routes):
         x = MARGIN + col_w * ri
         add_text(slide, x, y, col_w, Inches(0.4), route.get("name", ""), size=14, bold=True,
@@ -342,23 +413,35 @@ def build_route_compare_slide(prs, route_compare):
             add_text(slide, x, y, col_w, row_h, f"[{criteria_label[crit]}]\n{val}", size=10,
                       align=PP_ALIGN.CENTER)
         y += row_h
+    flow.y = y
     return slide
 
 
-def build_experience_slide(prs, brand_tagline, experience_points):
+def build_experience_slide(flow, brand_tagline, experience_points):
     """브랜드 소구 문구 + 경험 포인트(아이콘 카드 N개).
     예전엔 brand_points(불릿 목록)를 따로 받아 여기 같이 나열했는데, experience_points와
     내용이 거의 그대로 중복되는 문제가 있어(예: '노쇼핑/노옵션'이 두 번 나옴) brand_points는
     제거하고 experience_points 하나로 통일한다."""
-    slide = _blank_slide(prs)
-    y = Inches(0.4)
-    if brand_tagline:
-        h = estimate_text_height(brand_tagline, 16, CONTENT_W, bold=True)
-        add_text(slide, MARGIN, y, CONTENT_W, h, brand_tagline, size=16, bold=True,
-                  align=PP_ALIGN.CENTER)
-        y += h + Inches(0.2)
+    if not brand_tagline and not experience_points:
+        return None
+    tagline_h = estimate_text_height(brand_tagline, 16, CONTENT_W, bold=True) if brand_tagline else Inches(0)
+    col_w = CONTENT_W / len(experience_points) if experience_points else CONTENT_W
+    desc_h = Inches(0)
     if experience_points:
-        col_w = CONTENT_W / len(experience_points)
+        desc_h = max(
+            estimate_text_height(ep.get("description", ""), 10, col_w - Inches(0.1))
+            for ep in experience_points
+        )
+    total_h = (tagline_h + Inches(0.2) if brand_tagline else Inches(0)) \
+        + (Inches(0.65) + Inches(0.3) + desc_h if experience_points else Inches(0))
+
+    y = flow.ensure(total_h)
+    slide = flow.slide
+    if brand_tagline:
+        add_text(slide, MARGIN, y, CONTENT_W, tagline_h, brand_tagline, size=16, bold=True,
+                  align=PP_ALIGN.CENTER)
+        y += tagline_h + Inches(0.2)
+    if experience_points:
         for i, ep in enumerate(experience_points):
             x = MARGIN + col_w * i
             add_image_placeholder(slide, x + Inches(0.05), y, col_w - Inches(0.1), Inches(0.55), "아이콘")
@@ -374,25 +457,32 @@ def build_experience_slide(prs, brand_tagline, experience_points):
             dh = estimate_text_height(ep.get("description", ""), 10, col_w - Inches(0.1))
             add_text(slide, x, y, col_w - Inches(0.1), dh, ep.get("description", ""), size=10,
                       color=MUTED_COLOR, align=PP_ALIGN.CENTER)
+        y += desc_h
+    flow.y = y
     return slide
 
 
-def build_highlights_slides(prs, highlights, heading=None):
+def build_highlights_slides(flow, highlights, heading=None):
     """번호 매긴 여정 하이라이트 카드 (destinations와 별개 — 더 큰 테마 단위)"""
     if not highlights:
         return []
     heading = heading or "여정 하이라이트"  # AI가 빠뜨려도 타이틀 없는 슬라이드가 나가지 않도록 기본값
     slides = []
-    bottom_limit = SLIDE_H - Inches(0.2)
     idx = 0
     first = True
+    header_h = Inches(0.55)
+
     while idx < len(highlights):
-        slide = _blank_slide(prs)
-        y = Inches(0.3)
-        if first and heading:
+        if first:
+            y = flow.ensure(header_h + Inches(0.5))
+            slide = flow.slide
             add_section_bar(slide, y, heading)
-            y += Inches(0.55)
+            y += header_h
             first = False
+        else:
+            slide = flow.new_slide()
+            y = flow.y
+
         placed_any = False
         while idx < len(highlights):
             item = highlights[idx]
@@ -401,7 +491,7 @@ def build_highlights_slides(prs, highlights, heading=None):
             image_h = Inches(0.45)
             desc_h = estimate_text_height(item.get("description", ""), 11, CONTENT_W)
             block_h = Inches(0.22) + title_h + Inches(0.06) + image_h + Inches(0.1) + desc_h + Inches(0.18)
-            if placed_any and y + block_h > bottom_limit:
+            if placed_any and y + block_h > flow.bottom_limit:
                 break
             add_text(slide, MARGIN, y, Inches(0.6), Inches(0.25), num_label, size=13, bold=True,
                       color=ACCENT_COLOR)
@@ -415,23 +505,67 @@ def build_highlights_slides(prs, highlights, heading=None):
             y += desc_h + Inches(0.18)
             placed_any = True
             idx += 1
+
+        flow.y = y
         slides.append(slide)
     return slides
 
 
-def build_safety_slide(prs, altitude_profile, safety_note):
+def build_season_slide(flow, season, season_table=None):
+    if not season or (not season.get("content") and not season_table):
+        return None
+    header_h = Inches(0.6)
+    stat_h = Inches(0.5) if season.get("stat_line") else Inches(0)
+    content_h = estimate_text_height(season.get("content", ""), 12, CONTENT_W)
+    table_h = Inches(0.85) + Inches(0.3) if season_table else Inches(0)
+    total_h = header_h + stat_h + content_h + Inches(0.3) + table_h
+
+    y = flow.ensure(total_h)
+    slide = flow.slide
+    add_section_bar(slide, y, season.get("title", "언제 가면 좋을까?"))
+    y += header_h
+    if season.get("stat_line"):
+        bar = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, MARGIN, y, CONTENT_W, Inches(0.4))
+        bar.fill.solid()
+        bar.fill.fore_color.rgb = ACCENT_COLOR
+        bar.line.fill.background()
+        _tf_setup(bar.text_frame, season["stat_line"], 13, WHITE, bold=True, align=PP_ALIGN.CENTER)
+        bar.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
+        y += Inches(0.5)
+    add_text(slide, MARGIN, y, CONTENT_W, content_h, season.get("content", ""), size=12)
+    y += content_h + Inches(0.3)
+    if season_table:
+        add_image_placeholder(slide, MARGIN, y, CONTENT_W, Inches(0.7),
+                               "월별 기온 차트 (자리표시 — 실제 그래픽은 디자이너 작업)")
+        y += Inches(0.85)
+        header = "  ".join(f"{row.get('month','')}" for row in season_table)
+        add_text(slide, MARGIN, y, CONTENT_W, Inches(0.3), header, size=10, color=MUTED_COLOR,
+                  align=PP_ALIGN.CENTER)
+        y += Inches(0.3)
+    flow.y = y
+    return slide
+
+
+def build_safety_slide(flow, altitude_profile, safety_note):
     """경유지 고도 프로필(있는 경우) + 안전/난이도 관련 표준 안내.
     고산 트레킹의 '고산증', 도보순례의 '체력/보험', 일반 하이킹의 '난이도' 등
-    카테고리에 따라 톤이 다른 표준 안내문을 담는 범용 슬라이드."""
+    카테고리에 따라 톤이 다른 표준 안내문을 담는 범용 섹션."""
     if not altitude_profile and not safety_note:
         return None
-    slide = _blank_slide(prs)
-    y = Inches(0.4)
+    ans_h = Inches(0)
+    qa_h = Inches(0)
+    if safety_note and safety_note.get("question"):
+        ans_h = estimate_text_height(safety_note.get("answer", ""), 12, CONTENT_W)
+        qa_h = Inches(0.5) + ans_h + Inches(0.35)
+    profile_h = (Inches(0.4) + Inches(0.6) + Inches(0.65)) if altitude_profile else Inches(0)
+    total_h = qa_h + profile_h
+
+    y = flow.ensure(total_h)
+    slide = flow.slide
     if safety_note and safety_note.get("question"):
         add_text(slide, MARGIN, y, CONTENT_W, Inches(0.4), safety_note["question"], size=15,
                   bold=True, align=PP_ALIGN.CENTER)
         y += Inches(0.5)
-        ans_h = estimate_text_height(safety_note.get("answer", ""), 12, CONTENT_W)
         add_text(slide, MARGIN, y, CONTENT_W, ans_h, safety_note.get("answer", ""), size=12,
                   align=PP_ALIGN.CENTER)
         y += ans_h + Inches(0.35)
@@ -454,41 +588,18 @@ def build_safety_slide(prs, altitude_profile, safety_note):
             if extra:
                 label += f"\n{extra}"
             add_text(slide, x + gap, y, col_w - gap * 2, Inches(0.65), label, size=9, align=PP_ALIGN.CENTER)
+        y += Inches(0.65)
+    flow.y = y
     return slide
 
 
-def build_season_slide(prs, season, season_table=None):
-    slide = _blank_slide(prs)
-    y = Inches(0.4)
-    add_section_bar(slide, y, season.get("title", "언제 가면 좋을까?"))
-    y += Inches(0.6)
-    if season.get("stat_line"):
-        bar = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, MARGIN, y, CONTENT_W, Inches(0.4))
-        bar.fill.solid()
-        bar.fill.fore_color.rgb = ACCENT_COLOR
-        bar.line.fill.background()
-        _tf_setup(bar.text_frame, season["stat_line"], 13, WHITE, bold=True, align=PP_ALIGN.CENTER)
-        bar.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
-        y += Inches(0.5)
-    content_h = estimate_text_height(season.get("content", ""), 12, CONTENT_W)
-    add_text(slide, MARGIN, y, CONTENT_W, content_h, season.get("content", ""), size=12)
-    y += content_h + Inches(0.3)
-    if season_table:
-        add_image_placeholder(slide, MARGIN, y, CONTENT_W, Inches(0.7),
-                               "월별 기온 차트 (자리표시 — 실제 그래픽은 디자이너 작업)")
-        y += Inches(0.85)
-        header = "  ".join(f"{row.get('month','')}" for row in season_table)
-        add_text(slide, MARGIN, y, CONTENT_W, Inches(0.3), header, size=10, color=MUTED_COLOR,
-                  align=PP_ALIGN.CENTER)
-    return slide
-
-
-def build_banner_request_slide(prs, cover):
+def build_banner_request_slide(flow, cover):
     """배너 기획 페이지 — 실제 회사 배너제작 템플릿(배너제작.pptx)의 레이아웃을
     그대로 재현. 4개 배너 슬롯(메인 와이드/서브메인 띠/서브메인 2단/지역 리스트)에
     각각 이미지 자리와 '태그라인+타이틀' 텍스트를 넣는다. 스펙 라벨/안내 문구는
-    회사 표준이라 고정값이며, 지역/상품과 무관하게 항상 그대로 포함."""
-    slide = _blank_slide(prs)
+    회사 표준이라 고정값이며, 지역/상품과 무관하게 항상 그대로 포함. 절대 위치로
+    실제 배너 템플릿과 맞춰야 해서 다른 섹션과 공유하지 않고 항상 전용 슬라이드로 만든다."""
+    slide = flow.new_slide()
     tagline_title = f"{cover.get('tagline','')}\n{cover.get('product_name','')}"
 
     add_section_bar(slide, Inches(0), "배너 기획", height=Inches(0.47), size=14)
@@ -528,36 +639,39 @@ def build_banner_request_slide(prs, cover):
     return slide
 
 
-def build(content_json, out_path, per_slide=3):
+def build(content_json, out_path):
     """content_json(정현지 스키마) -> 새 PPTX 파일 생성"""
-    prs = new_presentation()
+    prs = Presentation()
+    prs.slide_width = SLIDE_W
+    prs.slide_height = SLIDE_H
+    flow = SlideFlow(prs)
+
     cover = content_json.get("cover", {})
-    build_cover_slide(prs, cover, content_json.get("watermark_label", ""))
-    build_background_slide(prs, content_json.get("background_story"))
-    build_reasons_slide(prs, content_json.get("why_reasons"), product_name=cover.get("product_name", ""))
+    build_cover_slide(flow, cover, content_json.get("watermark_label", ""))
+    build_background_slide(flow, content_json.get("background_story"))
+    build_reasons_slide(flow, content_json.get("why_reasons"), product_name=cover.get("product_name", ""))
     build_destination_slides(
-        prs,
+        flow,
         content_json.get("destinations", []),
         section_title=content_json.get("destinations_heading"),
         theme_line=None,
-        per_slide=per_slide,
     )
-    build_route_compare_slide(prs, content_json.get("route_compare"))
-    build_transport_slide(prs, content_json.get("transport_spec"))
+    build_route_compare_slide(flow, content_json.get("route_compare"))
+    build_transport_slide(flow, content_json.get("transport_spec"))
     build_experience_slide(
-        prs,
+        flow,
         content_json.get("brand_tagline", ""),
         content_json.get("experience_points"),
     )
-    build_guide_slide(prs, content_json.get("guide_profile"))
+    build_guide_slide(flow, content_json.get("guide_profile"))
     build_highlights_slides(
-        prs,
+        flow,
         content_json.get("highlights"),
         heading=content_json.get("highlights_heading"),
     )
-    build_season_slide(prs, content_json.get("season", {}), content_json.get("season_table"))
-    build_meal_slide(prs, content_json.get("meal_info"))
-    build_safety_slide(prs, content_json.get("altitude_profile"), content_json.get("safety_note"))
-    build_banner_request_slide(prs, cover)
+    build_season_slide(flow, content_json.get("season", {}), content_json.get("season_table"))
+    build_meal_slide(flow, content_json.get("meal_info"))
+    build_safety_slide(flow, content_json.get("altitude_profile"), content_json.get("safety_note"))
+    build_banner_request_slide(flow, cover)
     prs.save(out_path)
     return prs
