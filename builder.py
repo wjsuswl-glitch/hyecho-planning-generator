@@ -48,12 +48,13 @@ def _tf_setup(tf, text, size, color, bold=False, align=PP_ALIGN.LEFT, font=FONT_
         r.font.name = font
 
 
-def estimate_text_height(text, size_pt, width_emu, line_spacing=1.35, bold=False):
+def estimate_text_height(text, size_pt, width_emu, line_spacing=1.22, bold=False):
     """글자 수 기반으로 텍스트가 실제로 차지할 높이를 대략 추정한다.
     고정 간격 대신 이걸 써야 설명 길이에 따라 다음 요소와 안 겹친다.
-    실제 렌더링 폭 추정은 부정확할 수 있어 여유 마진을 넉넉히 둔다."""
+    실제 렌더링 폭 추정은 부정확할 수 있어 여유 마진을 둔다(단, 슬라이드 장수를
+    압축하기 위해 과도한 여유는 줄였다 — line_spacing 1.35→1.22, 버퍼 0.15→0.08in)."""
     if not text:
-        return Inches(0.15)
+        return Inches(0.1)
     width_in = Emu(width_emu).inches
     # 한글 기준 글자 폭 대략치 (볼드면 좀 더 넓게 잡음), 안전 마진 포함
     char_w_in = (size_pt / 72) * (1.05 if bold else 0.95)
@@ -62,7 +63,7 @@ def estimate_text_height(text, size_pt, width_emu, line_spacing=1.35, bold=False
     for line in str(text).split("\n"):
         total_lines += max(1, -(-len(line) // chars_per_line))  # ceil
     line_h_in = (size_pt / 72) * line_spacing
-    return Inches(total_lines * line_h_in + 0.15)  # 여유 마진 추가
+    return Inches(total_lines * line_h_in + 0.08)  # 여유 마진
 
 
 def add_text(slide, left, top, width, height, text, size=14, color=TEXT_COLOR,
@@ -133,9 +134,9 @@ def build_cover_slide(prs, cover, watermark_label=""):
         add_text(slide, MARGIN, y, CONTENT_W, Inches(0.4), cover["region_tag"],
                   size=13, color=MUTED_COLOR, align=PP_ALIGN.CENTER)
         y += Inches(0.45)
-    y += Inches(0.15)
-    add_small_image_placeholder(slide, y, Inches(2.6), Inches(1.1), "메인 이미지")
-    y += Inches(1.25)
+    y += Inches(0.1)
+    add_small_image_placeholder(slide, y, Inches(2.3), Inches(0.9), "메인 이미지")
+    y += Inches(1.0)
     if cover.get("subtitle"):
         add_text(slide, MARGIN, y, CONTENT_W, Inches(0.4), cover["subtitle"],
                   size=14, bold=True, align=PP_ALIGN.CENTER)
@@ -157,20 +158,20 @@ def build_destination_slides(prs, destinations, section_title=None, theme_line=N
     if not destinations:
         return []
     slides = []
-    bottom_limit = SLIDE_H - Inches(0.3)
+    bottom_limit = SLIDE_H - Inches(0.2)
     idx = 0
     first_slide = True
     while idx < len(destinations):
         slide = _blank_slide(prs)
-        y = Inches(0.4)
+        y = Inches(0.3)
         if first_slide:
             if section_title:
                 add_section_bar(slide, y, section_title)
-                y += Inches(0.6)
+                y += Inches(0.55)
             if theme_line:
-                add_text(slide, MARGIN, y, CONTENT_W, Inches(0.4), theme_line,
+                add_text(slide, MARGIN, y, CONTENT_W, Inches(0.35), theme_line,
                           size=14, bold=True, align=PP_ALIGN.CENTER)
-                y += Inches(0.5)
+                y += Inches(0.4)
             first_slide = False
 
         placed_any = False
@@ -178,26 +179,26 @@ def build_destination_slides(prs, destinations, section_title=None, theme_line=N
             dest = destinations[idx]
             region_tag = dest.get("region_tag")
             title_h = estimate_text_height(dest.get("title", ""), 15, CONTENT_W, bold=True)
-            image_h = Inches(0.6)
+            image_h = Inches(0.45)
             desc_h = estimate_text_height(dest.get("description", ""), 12, CONTENT_W)
-            block_h = (Inches(0.35) if region_tag else Inches(0)) + title_h + Inches(0.1) \
-                + image_h + Inches(0.15) + desc_h + Inches(0.3)
+            block_h = (Inches(0.28) if region_tag else Inches(0)) + title_h + Inches(0.06) \
+                + image_h + Inches(0.1) + desc_h + Inches(0.18)
 
             if placed_any and y + block_h > bottom_limit:
                 break  # 이 슬라이드엔 더 안 들어감 -> 다음 슬라이드로
 
             if region_tag:
-                add_text(slide, MARGIN, y, Inches(1.2), Inches(0.3), region_tag,
+                add_text(slide, MARGIN, y, Inches(1.2), Inches(0.25), region_tag,
                           size=10, bold=True, color=WHITE)
-                y += Inches(0.35)
+                y += Inches(0.28)
             add_text(slide, MARGIN, y, CONTENT_W, title_h, dest.get("title", ""),
                       size=15, bold=True)
-            y += title_h + Inches(0.1)
-            add_small_image_placeholder(slide, y, Inches(1.8), image_h, "이미지")
-            y += image_h + Inches(0.15)
+            y += title_h + Inches(0.06)
+            add_small_image_placeholder(slide, y, Inches(1.6), image_h, "이미지")
+            y += image_h + Inches(0.1)
             add_text(slide, MARGIN, y, CONTENT_W, desc_h, dest.get("description", ""),
                       size=12, color=MUTED_COLOR)
-            y += desc_h + Inches(0.3)
+            y += desc_h + Inches(0.18)
 
             placed_any = True
             idx += 1
@@ -241,11 +242,11 @@ def build_reasons_slide(prs, why_reasons, product_name=""):
         title_h = estimate_text_height(reason.get("title", ""), 15, CONTENT_W, bold=True)
         add_text(slide, MARGIN, y, CONTENT_W, title_h, reason.get("title", ""),
                   size=15, bold=True, color=ACCENT_COLOR, align=PP_ALIGN.CENTER)
-        y += title_h + Inches(0.1)
+        y += title_h + Inches(0.07)
         content_h = estimate_text_height(reason.get("content", ""), 12, CONTENT_W)
         add_text(slide, MARGIN, y, CONTENT_W, content_h, reason.get("content", ""),
                   size=12, align=PP_ALIGN.CENTER)
-        y += content_h + Inches(0.35)
+        y += content_h + Inches(0.22)
     return slide
 
 
@@ -259,16 +260,16 @@ def build_transport_slide(prs, transport_spec):
     y = Inches(0.4)
     if transport_spec.get("title"):
         add_section_bar(slide, y, transport_spec["title"])
-        y += Inches(0.6)
-    add_small_image_placeholder(slide, y, Inches(2.6), Inches(1.1), "이동수단 이미지")
-    y += Inches(1.25)
+        y += Inches(0.55)
+    add_small_image_placeholder(slide, y, Inches(2.2), Inches(0.85), "이동수단 이미지")
+    y += Inches(0.95)
     for spec in transport_spec["specs"]:
         label = spec.get("label", "")
         value = spec.get("value", "")
         row_h = estimate_text_height(f"{label}: {value}", 12, CONTENT_W)
         add_text(slide, MARGIN, y, Inches(1.6), row_h, label, size=12, bold=True, color=ACCENT_COLOR)
         add_text(slide, MARGIN + Inches(1.7), y, CONTENT_W - Inches(1.7), row_h, value, size=12)
-        y += row_h + Inches(0.1)
+        y += row_h + Inches(0.07)
     return slide
 
 
@@ -281,20 +282,20 @@ def build_guide_slide(prs, guide_profile):
     slide = _blank_slide(prs)
     y = Inches(0.4)
     add_section_bar(slide, y, "함께하는 사람들")
-    y += Inches(0.6)
+    y += Inches(0.55)
     for guide in guide_profile:
-        add_small_image_placeholder(slide, y, Inches(1.3), Inches(1.3), "프로필 사진")
-        y += Inches(1.4)
+        add_small_image_placeholder(slide, y, Inches(1.1), Inches(1.1), "프로필 사진")
+        y += Inches(1.18)
         name_title = guide.get("name", "")
         if guide.get("title"):
             name_title = f"{name_title}  ({guide['title']})" if name_title else guide["title"]
-        add_text(slide, MARGIN, y, CONTENT_W, Inches(0.3), name_title, size=13, bold=True,
+        add_text(slide, MARGIN, y, CONTENT_W, Inches(0.28), name_title, size=13, bold=True,
                   align=PP_ALIGN.CENTER)
-        y += Inches(0.35)
+        y += Inches(0.25)
         bio_h = estimate_text_height(guide.get("bio", ""), 11, CONTENT_W)
         add_text(slide, MARGIN, y, CONTENT_W, bio_h, guide.get("bio", ""), size=11,
                   color=MUTED_COLOR, align=PP_ALIGN.CENTER)
-        y += bio_h + Inches(0.3)
+        y += bio_h + Inches(0.18)
     return slide
 
 
@@ -355,19 +356,19 @@ def build_experience_slide(prs, brand_tagline, experience_points):
         h = estimate_text_height(brand_tagline, 16, CONTENT_W, bold=True)
         add_text(slide, MARGIN, y, CONTENT_W, h, brand_tagline, size=16, bold=True,
                   align=PP_ALIGN.CENTER)
-        y += h + Inches(0.3)
+        y += h + Inches(0.2)
     if experience_points:
         col_w = CONTENT_W / len(experience_points)
         for i, ep in enumerate(experience_points):
             x = MARGIN + col_w * i
-            add_image_placeholder(slide, x + Inches(0.05), y, col_w - Inches(0.1), Inches(0.7), "아이콘")
-        y += Inches(0.85)
+            add_image_placeholder(slide, x + Inches(0.05), y, col_w - Inches(0.1), Inches(0.55), "아이콘")
+        y += Inches(0.65)
         for i, ep in enumerate(experience_points):
             x = MARGIN + col_w * i
             th = estimate_text_height(ep.get("title", ""), 12, col_w - Inches(0.1), bold=True)
             add_text(slide, x, y, col_w - Inches(0.1), th, ep.get("title", ""), size=12,
                       bold=True, align=PP_ALIGN.CENTER)
-        y += Inches(0.4)
+        y += Inches(0.3)
         for i, ep in enumerate(experience_points):
             x = MARGIN + col_w * i
             dh = estimate_text_height(ep.get("description", ""), 10, col_w - Inches(0.1))
@@ -382,36 +383,36 @@ def build_highlights_slides(prs, highlights, heading=None):
         return []
     heading = heading or "여정 하이라이트"  # AI가 빠뜨려도 타이틀 없는 슬라이드가 나가지 않도록 기본값
     slides = []
-    bottom_limit = SLIDE_H - Inches(0.3)
+    bottom_limit = SLIDE_H - Inches(0.2)
     idx = 0
     first = True
     while idx < len(highlights):
         slide = _blank_slide(prs)
-        y = Inches(0.4)
+        y = Inches(0.3)
         if first and heading:
             add_section_bar(slide, y, heading)
-            y += Inches(0.6)
+            y += Inches(0.55)
             first = False
         placed_any = False
         while idx < len(highlights):
             item = highlights[idx]
             num_label = f"{idx + 1:02d}"
             title_h = estimate_text_height(item.get("title", ""), 14, CONTENT_W, bold=True)
-            image_h = Inches(0.6)
+            image_h = Inches(0.45)
             desc_h = estimate_text_height(item.get("description", ""), 11, CONTENT_W)
-            block_h = Inches(0.3) + title_h + Inches(0.1) + image_h + Inches(0.15) + desc_h + Inches(0.3)
+            block_h = Inches(0.22) + title_h + Inches(0.06) + image_h + Inches(0.1) + desc_h + Inches(0.18)
             if placed_any and y + block_h > bottom_limit:
                 break
-            add_text(slide, MARGIN, y, Inches(0.6), Inches(0.3), num_label, size=13, bold=True,
+            add_text(slide, MARGIN, y, Inches(0.6), Inches(0.25), num_label, size=13, bold=True,
                       color=ACCENT_COLOR)
-            y += Inches(0.35)
+            y += Inches(0.26)
             add_text(slide, MARGIN, y, CONTENT_W, title_h, item.get("title", ""), size=14, bold=True)
-            y += title_h + Inches(0.1)
-            add_small_image_placeholder(slide, y, Inches(1.8), image_h, "이미지")
-            y += image_h + Inches(0.15)
+            y += title_h + Inches(0.06)
+            add_small_image_placeholder(slide, y, Inches(1.6), image_h, "이미지")
+            y += image_h + Inches(0.1)
             add_text(slide, MARGIN, y, CONTENT_W, desc_h, item.get("description", ""), size=11,
                       color=MUTED_COLOR)
-            y += desc_h + Inches(0.3)
+            y += desc_h + Inches(0.18)
             placed_any = True
             idx += 1
         slides.append(slide)

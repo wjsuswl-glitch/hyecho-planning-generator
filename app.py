@@ -6,6 +6,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from parser import parse_docx, detect_format_and_draft_copy, parse_pptx, encode_image_block
 from prompt_builder import build_system_prompt
 from generator import generate_content
+from reviewer import review_content
 from assembler import assemble
 import builder as dynamic_builder
 
@@ -24,6 +25,13 @@ with col1:
 with col2:
     category = st.selectbox("카테고리", ["문탐", "트레킹"])
 
+enable_web_search = st.checkbox(
+    "사업부 자료에 없는 배경지식/사실을 웹 검색으로 보완",
+    value=True,
+    help="background_story 등에서 사업부 자료에 없는 사실이 필요할 때 AI가 웹 검색으로 확인합니다. "
+         "끄면 사업부 자료와 일반 상식 범위 내에서만 작성합니다(검색 비용/시간 절약).",
+)
+
 MAX_FILES = 5
 uploaded_files = st.file_uploader(
     "사업부 원본자료 업로드 (.docx, .pptx, 이미지 — 최대 5개, 그중 .docx 최소 1개 필요)",
@@ -40,6 +48,11 @@ has_api_key = bool(os.environ.get("ANTHROPIC_API_KEY"))
 if not has_api_key:
     st.warning("ANTHROPIC_API_KEY가 설정되지 않았어요. 지금은 프롬프트 미리보기까지만 가능해요. "
                "터미널에서 `export ANTHROPIC_API_KEY=\"키\"` 설정 후 앱을 다시 실행하면 실제 생성이 가능합니다.")
+
+has_gemini_key = bool(os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"))
+if not has_gemini_key:
+    st.info("GEMINI_API_KEY가 설정되지 않았어요. 생성은 가능하지만 왜곡/표절/사실확인 "
+            "검수 단계는 건너뜁니다. 검수까지 받으려면 `export GEMINI_API_KEY=\"키\"` 설정 후 다시 실행하세요.")
 
 if uploaded_files and st.button("생성하기", type="primary"):
     # 확장자별로 분류: docx/pptx는 텍스트 파싱해서 sections에 병합, 이미지는 별도로 모아서
@@ -101,8 +114,11 @@ if uploaded_files and st.button("생성하기", type="primary"):
         st.info("API 키가 없어 여기서 멈춥니다. 위 프롬프트가 실제로 AI에게 전달될 내용이에요.")
     else:
         try:
-            with st.spinner("AI 카피 생성 중..."):
-                content = generate_content(prompt, image_blocks=image_blocks)
+            spinner_msg = "AI 카피 생성 중..." + (" (필요 시 웹 검색 포함)" if enable_web_search else "")
+            with st.spinner(spinner_msg):
+                content = generate_content(
+                    prompt, image_blocks=image_blocks, enable_web_search=enable_web_search,
+                )
         except Exception as e:
             st.error(f"AI 콘텐츠 생성 중 오류가 발생했습니다:\n\n{e}")
             st.stop()
@@ -110,6 +126,35 @@ if uploaded_files and st.button("생성하기", type="primary"):
         st.success("생성 완료!")
         with st.expander("생성된 JSON 보기"):
             st.json(content)
+
+        try:
+            with st.spinner("Gemini로 검수 중... (왜곡/표절/사실확인)"):
+                source_material_text = "\n\n".join(
+                    f"[{k}]\n{v}" for k, v in sections.items()
+                )
+                review = review_content(content, source_material_text)
+        except Exception as e:
+            st.warning(f"검수 중 오류가 발생해 이 단계는 건너뜁니다:\n\n{e}")
+            review = {"issues": [], "summary": ""}
+
+        if review.get("_dry_run"):
+            st.info(f"ℹ️ {review['_note']}")
+        else:
+            issues = review.get("issues", [])
+            if issues:
+                st.warning(f"⚠️ Gemini 검수에서 {len(issues)}건이 발견됐습니다 — 확인이 필요합니다.")
+                with st.expander(f"🔎 검수 상세 내역 ({len(issues)}건)", expanded=True):
+                    if review.get("summary"):
+                        st.text(review["summary"])
+                    for issue in issues:
+                        st.markdown(
+                            f"**[{issue.get('category')} · {issue.get('severity')}] "
+                            f"{issue.get('field')}**\n\n"
+                            f"> {issue.get('quote')}\n\n"
+                            f"{issue.get('explanation')}"
+                        )
+            else:
+                st.info("✅ Gemini 검수 통과 — 왜곡/표절/사실확인 이슈가 발견되지 않았습니다.")
 
         try:
             with st.spinner("PPTX 조립 중..."):

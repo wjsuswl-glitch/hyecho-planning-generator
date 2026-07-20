@@ -1,7 +1,12 @@
 """Claude API 호출 모듈 — ANTHROPIC_API_KEY 환경변수 필요"""
 import os, json
 
-def generate_content(system_prompt, image_blocks=None, dry_run=False):
+# 서버 실행형 웹 검색 도구. 사업부 자료에 없는 배경지식/사실을 보완할 때 AI가
+# 자체적으로 웹을 검색하도록 허용한다(background_story 등). Claude 쪽에서 검색을
+# 수행하고 결과를 바로 응답에 반영하므로 별도 도구 실행 루프가 필요 없다.
+WEB_SEARCH_TOOL = {"type": "web_search_20260209", "name": "web_search", "max_uses": 5}
+
+def generate_content(system_prompt, image_blocks=None, dry_run=False, enable_web_search=True):
     if dry_run or not os.environ.get("ANTHROPIC_API_KEY"):
         return {
             "_dry_run": True,
@@ -19,16 +24,37 @@ def generate_content(system_prompt, image_blocks=None, dry_run=False):
     else:
         content = system_prompt
 
-    resp = client.messages.create(
+    messages = [{"role": "user", "content": content}]
+    request_kwargs = dict(
         model="claude-sonnet-5",
         max_tokens=8000,
         thinking={"type": "disabled"},  # 구조화된 JSON 생성엔 추론 불필요.
         # thinking을 켜두면 max_tokens가 "생각+응답" 합산 한도라
         # 응답이 완성되기 전에 잘릴 수 있음 (Sonnet 5부터 기본으로 켜져 있음)
-        messages=[{"role": "user", "content": content}],
     )
+    if enable_web_search:
+        request_kwargs["tools"] = [WEB_SEARCH_TOOL]
+
+    resp = client.messages.create(messages=messages, **request_kwargs)
+
+    # 웹 검색이 서버 쪽에서 10회 이상 반복되면 stop_reason이 "pause_turn"으로
+    # 끊길 수 있다 — 별도 도구 실행 없이 그대로 재요청하면 이어서 진행된다.
+    # (user.message로 "계속" 등을 덧붙이지 않는다 — trailing server_tool_use를
+    # 보고 서버가 자동으로 이어서 진행함)
+    resume_attempts = 0
+    while resp.stop_reason == "pause_turn" and resume_attempts < 3:
+        messages = messages + [{"role": "assistant", "content": resp.content}]
+        resp = client.messages.create(messages=messages, **request_kwargs)
+        resume_attempts += 1
+
     text = "".join(b.text for b in resp.content if b.type == "text")
     text = text.strip()
+
+    if resp.stop_reason == "refusal":
+        raise RuntimeError(
+            "AI가 안전 정책상 이 요청을 거부했습니다(stop_reason=refusal). "
+            "웹 검색 대상 자료나 상품 내용에 민감한 표현이 없는지 확인해주세요."
+        )
 
     if resp.stop_reason == "max_tokens":
         raise RuntimeError(
