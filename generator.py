@@ -47,8 +47,8 @@ def generate_content(system_prompt, image_blocks=None, dry_run=False, enable_web
         resp = client.messages.create(messages=messages, **request_kwargs)
         resume_attempts += 1
 
-    text = "".join(b.text for b in resp.content if b.type == "text")
-    text = text.strip()
+    text_blocks = [b.text for b in resp.content if b.type == "text"]
+    joined_text = "".join(text_blocks).strip()
 
     if resp.stop_reason == "refusal":
         raise RuntimeError(
@@ -61,22 +61,39 @@ def generate_content(system_prompt, image_blocks=None, dry_run=False, enable_web
             "AI 응답이 max_tokens(8000)에서 잘렸습니다 — JSON이 완성되지 못했습니다. "
             "destinations 개수가 많거나 사업부 자료가 길 때 발생할 수 있습니다. "
             "max_tokens를 더 늘리거나, 스타일 규칙에서 문장 길이를 줄이도록 지시하세요.\n"
-            f"응답 마지막 300자: ...{text[-300:]}"
+            f"응답 마지막 300자: ...{joined_text[-300:]}"
         )
 
-    if text.startswith("```"):
-        text = text.split("```")[1]
-        if text.startswith("json"):
-            text = text[4:]
-        text = text.strip()
+    def _strip_fence(candidate):
+        candidate = candidate.strip()
+        if candidate.startswith("```"):
+            candidate = candidate.split("```")[1]
+            if candidate.startswith("json"):
+                candidate = candidate[4:]
+            candidate = candidate.strip()
+        return candidate
 
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError as e:
-        # 어디서 깨졌는지 앞뒤 맥락을 보여줘서 디버깅 가능하게 함
-        start = max(0, e.pos - 150)
-        end = min(len(text), e.pos + 150)
-        raise RuntimeError(
-            f"AI 응답을 JSON으로 파싱하는 데 실패했습니다: {e}\n"
-            f"문제 지점 근처 텍스트:\n...{text[start:end]}..."
-        ) from e
+    # 웹 검색이 켜지면 Claude가 최종 JSON 앞에 검색 과정을 설명하는 서술문
+    # 텍스트 블록을 함께 내보낼 수 있다. 뒤에서부터(최종 답변일 가능성이 높은
+    # 블록부터) 순서대로 JSON 파싱을 시도해 서술문을 건너뛴다.
+    for block in reversed(text_blocks):
+        candidate = _strip_fence(block)
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+
+    # 블록 단위로도 안 되면 전체를 이어붙인 텍스트에서 가장 바깥쪽 {...}만 추출해본다.
+    start = joined_text.find("{")
+    end = joined_text.rfind("}")
+    if start != -1 and end > start:
+        candidate = joined_text[start:end + 1]
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            pass
+
+    raise RuntimeError(
+        "AI 응답에서 JSON을 찾지 못했습니다.\n"
+        f"응답 원문 일부: ...{joined_text[:500]}..."
+    )
