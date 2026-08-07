@@ -243,21 +243,18 @@ def build_destination_slides(flow, destinations, section_title=None, theme_line=
 
 
 def build_background_slide(flow, background_story):
-    """'차마고도란?' 같은 배경 이야기 섹션"""
+    """배경 이야기 섹션. 예전엔 "OOO란?" 형태의 kicker 소제목을 title 위에 따로
+    붙였는데, 모든 상품 기획안에 기계적으로 반복되는 상투적 표현이라 제거함
+    (title만으로 바로 임팩트 있게 시작 — prompt_builder.py도 함께 수정됨)."""
     if not background_story:
         return None
-    kicker = background_story.get("kicker", "")
     title = background_story.get("title", "")
     content = background_story.get("content", "")
     content_h = estimate_text_height(content, 12, CONTENT_W)
-    total_h = (Inches(0.4) if kicker else Inches(0)) + (Inches(0.55) if title else Inches(0)) + content_h
+    total_h = (Inches(0.55) if title else Inches(0)) + content_h
 
     y = flow.ensure(total_h)
     slide = flow.slide
-    if kicker:
-        add_text(slide, MARGIN, y, CONTENT_W, Inches(0.35), kicker,
-                  size=13, color=MUTED_COLOR, align=PP_ALIGN.CENTER)
-        y += Inches(0.4)
     if title:
         add_text(slide, MARGIN, y, CONTENT_W, Inches(0.5), title,
                   size=20, bold=True, align=PP_ALIGN.CENTER)
@@ -426,14 +423,22 @@ def build_experience_slide(flow, brand_tagline, experience_points):
         return None
     tagline_h = estimate_text_height(brand_tagline, 16, CONTENT_W, bold=True) if brand_tagline else Inches(0)
     col_w = CONTENT_W / len(experience_points) if experience_points else CONTENT_W
+    title_h = Inches(0)
     desc_h = Inches(0)
     if experience_points:
+        title_h = max(
+            estimate_text_height(ep.get("title", ""), 12, col_w - Inches(0.1), bold=True)
+            for ep in experience_points
+        )
         desc_h = max(
             estimate_text_height(ep.get("description", ""), 10, col_w - Inches(0.1))
             for ep in experience_points
         )
+    # 카드 제목이 1줄일 때만 맞는 고정 간격(예전 Inches(0.3))을 쓰면, 제목이 2줄로
+    # 줄바꿈되는 순간 바로 아래 설명 텍스트와 겹치는 버그가 있었음 — title_h를 실제
+    # 추정 높이로 계산해서 다음 요소를 그만큼 아래로 밀어내도록 수정.
     total_h = (tagline_h + Inches(0.2) if brand_tagline else Inches(0)) \
-        + (Inches(0.65) + Inches(0.3) + desc_h if experience_points else Inches(0))
+        + (Inches(0.65) + title_h + Inches(0.1) + desc_h if experience_points else Inches(0))
 
     y = flow.ensure(total_h)
     slide = flow.slide
@@ -448,10 +453,9 @@ def build_experience_slide(flow, brand_tagline, experience_points):
         y += Inches(0.65)
         for i, ep in enumerate(experience_points):
             x = MARGIN + col_w * i
-            th = estimate_text_height(ep.get("title", ""), 12, col_w - Inches(0.1), bold=True)
-            add_text(slide, x, y, col_w - Inches(0.1), th, ep.get("title", ""), size=12,
+            add_text(slide, x, y, col_w - Inches(0.1), title_h, ep.get("title", ""), size=12,
                       bold=True, align=PP_ALIGN.CENTER)
-        y += Inches(0.3)
+        y += title_h + Inches(0.1)
         for i, ep in enumerate(experience_points):
             x = MARGIN + col_w * i
             dh = estimate_text_height(ep.get("description", ""), 10, col_w - Inches(0.1))
@@ -557,7 +561,27 @@ def build_safety_slide(flow, altitude_profile, safety_note):
     if safety_note and safety_note.get("question"):
         ans_h = estimate_text_height(safety_note.get("answer", ""), 12, CONTENT_W)
         qa_h = Inches(0.5) + ans_h + Inches(0.35)
-    profile_h = (Inches(0.4) + Inches(0.6) + Inches(0.65)) if altitude_profile else Inches(0)
+
+    n = len(altitude_profile) if altitude_profile else 0
+    col_w = CONTENT_W / max(n, 1)
+    gap = Inches(0.06)
+    labels = []
+    if altitude_profile:
+        for stop in altitude_profile:
+            # 자리표시 박스는 "숙박"이 아니라 "지도"여야 함 — 예전 코드가 숙박/롯지
+            # 소개 슬라이드에서 라벨만 안 바꾼 채 복붙된 흔적으로 보임.
+            label = f"{stop.get('name','')}\n{stop.get('altitude','')}"
+            extra = " / ".join(v for v in (stop.get("distance"), stop.get("duration")) if v)
+            if extra:
+                label += f"\n{extra}"
+            if stop.get("highlight"):
+                label += f"\n{stop['highlight']}"
+            labels.append(label)
+    # 라벨 줄 수가 highlight 유무에 따라 2~4줄로 달라지므로, 고정 Inches(0.65) 대신
+    # 실제 텍스트 높이를 추정해서 다음 요소와 겹치지 않게 함(build_experience_slide와
+    # 동일한 문제였음).
+    label_h = max((estimate_text_height(l, 9, col_w - gap * 2) for l in labels), default=Inches(0.5))
+    profile_h = (Inches(0.4) + Inches(0.6) + label_h) if altitude_profile else Inches(0)
     total_h = qa_h + profile_h
 
     y = flow.ensure(total_h)
@@ -574,33 +598,36 @@ def build_safety_slide(flow, altitude_profile, safety_note):
                   "구간별 고도 프로필 (자리표시 — 실제 그래픽은 디자이너 작업)",
                   size=10, color=MUTED_COLOR, align=PP_ALIGN.CENTER)
         y += Inches(0.4)
-        n = len(altitude_profile)
-        col_w = CONTENT_W / max(n, 1)
-        gap = Inches(0.06)
-        for i, stop in enumerate(altitude_profile):
+        for i in range(n):
             x = MARGIN + col_w * i
-            add_image_placeholder(slide, x + gap, y, col_w - gap * 2, Inches(0.5), "숙박")
+            add_image_placeholder(slide, x + gap, y, col_w - gap * 2, Inches(0.5), "지도")
         y += Inches(0.6)
-        for i, stop in enumerate(altitude_profile):
+        for i, label in enumerate(labels):
             x = MARGIN + col_w * i
-            label = f"{stop.get('name','')}\n{stop.get('altitude','')}"
-            extra = " / ".join(v for v in (stop.get("distance"), stop.get("duration")) if v)
-            if extra:
-                label += f"\n{extra}"
-            add_text(slide, x + gap, y, col_w - gap * 2, Inches(0.65), label, size=9, align=PP_ALIGN.CENTER)
-        y += Inches(0.65)
+            add_text(slide, x + gap, y, col_w - gap * 2, label_h, label, size=9, align=PP_ALIGN.CENTER)
+        y += label_h
     flow.y = y
     return slide
 
 
-def build_banner_request_slide(flow, cover):
+def build_banner_request_slide(flow, cover, banner_copy=None):
     """배너 기획 페이지 — 실제 회사 배너제작 템플릿(배너제작.pptx)의 레이아웃을
     그대로 재현. 4개 배너 슬롯(메인 와이드/서브메인 띠/서브메인 2단/지역 리스트)에
     각각 이미지 자리와 '태그라인+타이틀' 텍스트를 넣는다. 스펙 라벨/안내 문구는
     회사 표준이라 고정값이며, 지역/상품과 무관하게 항상 그대로 포함. 절대 위치로
-    실제 배너 템플릿과 맞춰야 해서 다른 섹션과 공유하지 않고 항상 전용 슬라이드로 만든다."""
+    실제 배너 템플릿과 맞춰야 해서 다른 섹션과 공유하지 않고 항상 전용 슬라이드로 만든다.
+
+    예전엔 cover.tagline+product_name(표지 전체 카피)을 4개 슬롯에 그대로 복붙해서
+    문구가 길고 밋밋했음 — 실제 회사 배너는 표지 카피와 다르게, 상품에서 가장
+    눈에 띄는 포인트만 뽑아 훨씬 짧고 강렬하게 압축한 별도 카피를 쓴다(첨부 배너
+    예시: "봄으로 물든 차마고도를 걷다 / 카피할 수 없는 오리지널의 위엄" +
+    "세계 3대 트레킹 / 호도협·옥룡설산"). banner_copy가 있으면 그걸 쓰고, AI가
+    누락했을 때만 cover 필드로 대체(하위 호환)."""
     slide = flow.new_slide()
-    tagline_title = f"{cover.get('tagline','')}\n{cover.get('product_name','')}"
+    banner_copy = banner_copy or {}
+    kicker = banner_copy.get("kicker") or cover.get("tagline", "")
+    title = banner_copy.get("title") or cover.get("product_name", "")
+    tagline_title = f"{kicker}\n{title}"
 
     add_section_bar(slide, Inches(0), "배너 기획", height=Inches(0.47), size=14)
     add_text(slide, Inches(0.106), Inches(0.675), Inches(1.717), Inches(0.404),
@@ -672,6 +699,6 @@ def build(content_json, out_path):
     build_season_slide(flow, content_json.get("season", {}), content_json.get("season_table"))
     build_meal_slide(flow, content_json.get("meal_info"))
     build_safety_slide(flow, content_json.get("altitude_profile"), content_json.get("safety_note"))
-    build_banner_request_slide(flow, cover)
+    build_banner_request_slide(flow, cover, content_json.get("banner_copy"))
     prs.save(out_path)
     return prs
