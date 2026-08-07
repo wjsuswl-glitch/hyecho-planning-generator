@@ -92,6 +92,26 @@ def generate_content(system_prompt, image_blocks=None, dry_run=False, enable_web
                 pass
         return None, joined_text
 
+    def _is_substantive(result):
+        """cover.tagline/product_name처럼 항상 채워져야 하는 핵심 필드가 실제로
+        차 있는지 확인한다. JSON 파싱 자체는 성공했지만 속이 빈 뼈대(예: 검색·서술문
+        문제로 급하게 마무리하며 {}에 가까운 결과를 낸 경우)를 성공으로 잘못
+        처리하지 않기 위한 안전장치 — 이게 없으면 오류 없이 텅 빈 PPTX가 조용히
+        만들어지는 훨씬 나쁜 상황이 된다."""
+        if not isinstance(result, dict):
+            return False
+        cover = result.get("cover")
+        if not isinstance(cover, dict):
+            return False
+        # .get(key, "") 기본값은 키가 아예 없을 때만 적용되고, 값이 명시적으로
+        # null(None)이면 그대로 None이 반환돼 .strip()에서 죽는다 — "or \"\"\"로 방어.
+        product_name = cover.get("product_name") or ""
+        tagline = cover.get("tagline") or ""
+        return bool(product_name.strip()) and bool(tagline.strip())
+
+    joined_text = ""
+    empty_skeleton = False  # JSON은 찾았지만 cover.product_name 등 핵심 필드가 빈 경우
+
     if resp.stop_reason == "max_tokens":
         # 잘린 지점까지의 응답을 assistant 턴으로 그대로 다시 보내 "이어서 계속
         # 생성"하게 하고(pause_turn 재개와 같은 방식), 두 응답의 텍스트를 이어붙여
@@ -103,10 +123,15 @@ def generate_content(system_prompt, image_blocks=None, dry_run=False, enable_web
         cont_resp = client.messages.create(messages=continue_messages, **continue_kwargs)
         cont_text = "".join(b.text for b in cont_resp.content if b.type == "text")
         combined = _strip_fence(first_text + cont_text)
+        result = None
         try:
-            return json.loads(combined)
+            result = json.loads(combined)
         except json.JSONDecodeError:
             pass
+        if result is not None and _is_substantive(result):
+            return result
+        if result is not None:
+            empty_skeleton = True
         if cont_resp.stop_reason == "max_tokens":
             raise RuntimeError(
                 f"AI 응답이 이어서 생성해도 다시 max_tokens({MAX_TOKENS})에서 잘렸습니다 — "
@@ -115,44 +140,65 @@ def generate_content(system_prompt, image_blocks=None, dry_run=False, enable_web
                 "줄이도록 지시하세요.\n"
                 f"응답 마지막 300자: ...{cont_text[-300:]}"
             )
-        raise RuntimeError(
-            "AI 응답이 max_tokens에서 잘려서 이어쓰기를 시도했지만, 이어붙인 결과를 "
-            "JSON으로 파싱하지 못했습니다.\n"
-            f"응답 원문 일부: ...{combined[:500]}..."
-        )
-
-    result, joined_text = _extract_json(resp)
-    if result is not None:
-        return result
-
-    # 검색을 많이 반복하다 보면(특히 max_uses 한도에 걸렸을 때) Claude가 "검색을
-    # 진행하겠습니다 / 결과를 확인했습니다" 같은 서술문만 내놓고 최종 JSON을 아예
-    # 못 내는 경우가 있다 — 이미 확보한 검색 결과가 대화 맥락에 남아있으니, 도구
-    # 없이 "설명 없이 JSON만 출력하라"고 한 번 더 요청해서 복구를 시도한다
-    # (검색 결과를 버리고 처음부터 다시 시도하는 것보다 훨씬 저렴하고 빠르다).
-    if enable_web_search:
-        retry_messages = messages + [
-            {"role": "assistant", "content": resp.content},
-            {"role": "user", "content": (
-                "지금까지 확인한 정보만으로 충분합니다. 추가 검색이나 설명 문장 없이, "
-                "위에서 지시한 스키마에 맞는 최종 JSON 객체 하나만 출력하세요. "
-                "'~하겠습니다', '~확인했습니다' 같은 진행 설명은 한 글자도 포함하지 마세요."
-            )},
-        ]
-        retry_resp = client.messages.create(
-            messages=retry_messages,
-            model="claude-sonnet-5",
-            max_tokens=MAX_TOKENS,
-            thinking={"type": "disabled"},
-        )
-        if retry_resp.stop_reason == "max_tokens":
+        if result is None:
             raise RuntimeError(
-                f"JSON 전용 재요청도 max_tokens({MAX_TOKENS})에서 잘렸습니다 — JSON이 완성되지 못했습니다."
+                "AI 응답이 max_tokens에서 잘려서 이어쓰기를 시도했지만, 이어붙인 결과를 "
+                "JSON으로 파싱하지 못했습니다.\n"
+                f"응답 원문 일부: ...{combined[:500]}..."
             )
-        retry_result, retry_text = _extract_json(retry_resp)
-        if retry_result is not None:
-            return retry_result
-        joined_text = retry_text
+        joined_text = combined
+    else:
+        result, joined_text = _extract_json(resp)
+        if result is not None and _is_substantive(result):
+            return result
+        if result is not None:
+            empty_skeleton = True
+
+    # 여기 도달하는 두 경우: (1) 응답 어디에도 JSON이 없음(검색을 많이 반복하다
+    # "검색을 진행하겠습니다" 같은 서술문만 내놓고 끝난 경우), (2) JSON은 찾았지만
+    # cover.product_name/tagline 등 핵심 필드가 비어 있는 빈 뼈대(급하게 마무리하며
+    # {}에 가까운 결과를 낸 경우) — 두 경우 모두 이미 확보한 대화 맥락(검색 결과 등)에
+    # 이어서 "설명 없이 스키마를 채운 JSON만 출력하라"고 한 번 더 요청해 복구를
+    # 시도한다(처음부터 다시 생성하는 것보다 훨씬 저렴하고 빠르다). 웹 검색을 안 썼어도
+    # 빈 뼈대 문제는 발생할 수 있으므로 enable_web_search 여부와 무관하게 시도한다.
+    retry_instruction = (
+        "지금까지 확인한 정보만으로 충분합니다. 추가 검색이나 설명 문장 없이, "
+        "위에서 지시한 스키마의 모든 필드를 실제 내용으로 채운 최종 JSON 객체 하나만 "
+        "출력하세요. cover.product_name, cover.tagline처럼 핵심 필드를 빈 문자열로 "
+        "두면 안 됩니다. '~하겠습니다', '~확인했습니다' 같은 진행 설명은 한 글자도 "
+        "포함하지 마세요."
+        if empty_skeleton else
+        "지금까지 확인한 정보만으로 충분합니다. 추가 검색이나 설명 문장 없이, "
+        "위에서 지시한 스키마에 맞는 최종 JSON 객체 하나만 출력하세요. "
+        "'~하겠습니다', '~확인했습니다' 같은 진행 설명은 한 글자도 포함하지 마세요."
+    )
+    retry_messages = messages + [
+        {"role": "assistant", "content": resp.content},
+        {"role": "user", "content": retry_instruction},
+    ]
+    retry_resp = client.messages.create(
+        messages=retry_messages,
+        model="claude-sonnet-5",
+        max_tokens=MAX_TOKENS,
+        thinking={"type": "disabled"},
+    )
+    if retry_resp.stop_reason == "max_tokens":
+        raise RuntimeError(
+            f"JSON 전용 재요청도 max_tokens({MAX_TOKENS})에서 잘렸습니다 — JSON이 완성되지 못했습니다."
+        )
+    retry_result, retry_text = _extract_json(retry_resp)
+    if retry_result is not None and _is_substantive(retry_result):
+        return retry_result
+    joined_text = retry_text
+
+    if empty_skeleton or (retry_result is not None):
+        raise RuntimeError(
+            "AI가 스키마 구조만 있고 핵심 내용(cover.product_name/tagline 등)은 비어 있는 "
+            "JSON을 반환했습니다(재요청 포함) — 사업부 자료가 너무 짧거나, 다듬기/창작 "
+            "모드 판별이 잘못됐을 가능성이 있습니다. 사업부 자료를 확인하거나 다시 "
+            "시도해주세요.\n"
+            f"응답 원문 일부: ...{joined_text[:500]}..."
+        )
 
     raise RuntimeError(
         "AI 응답에서 JSON을 찾지 못했습니다(설명 없이 JSON만 출력하라는 재요청도 실패).\n"
