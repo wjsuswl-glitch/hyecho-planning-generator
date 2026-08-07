@@ -6,6 +6,12 @@ import os, json
 # 수행하고 결과를 바로 응답에 반영하므로 별도 도구 실행 루프가 필요 없다.
 WEB_SEARCH_TOOL = {"type": "web_search_20260209", "name": "web_search", "max_uses": 5}
 
+# destinations/altitude_profile 배열이 긴 상품(예: 8개 구간짜리 트레킹)에 banner_copy,
+# altitude_profile.highlight 등 필드가 추가되면서 8000으로는 종종 부족해짐 — 여유 있게
+# 상향. 실제로는 다 안 써도 되고, 쓴 만큼만 과금되므로(출력 토큰 $10/백만) 올려도
+# 비용 영향은 미미함.
+MAX_TOKENS = 16000
+
 def generate_content(system_prompt, image_blocks=None, dry_run=False, enable_web_search=True):
     if dry_run or not os.environ.get("ANTHROPIC_API_KEY"):
         return {
@@ -27,7 +33,7 @@ def generate_content(system_prompt, image_blocks=None, dry_run=False, enable_web
     messages = [{"role": "user", "content": content}]
     request_kwargs = dict(
         model="claude-sonnet-5",
-        max_tokens=8000,
+        max_tokens=MAX_TOKENS,
         thinking={"type": "disabled"},  # 구조화된 JSON 생성엔 추론 불필요.
         # thinking을 켜두면 max_tokens가 "생각+응답" 합산 한도라
         # 응답이 완성되기 전에 잘릴 수 있음 (Sonnet 5부터 기본으로 켜져 있음)
@@ -87,12 +93,32 @@ def generate_content(system_prompt, image_blocks=None, dry_run=False, enable_web
         return None, joined_text
 
     if resp.stop_reason == "max_tokens":
-        _, joined_text = _extract_json(resp)
+        # 잘린 지점까지의 응답을 assistant 턴으로 그대로 다시 보내 "이어서 계속
+        # 생성"하게 하고(pause_turn 재개와 같은 방식), 두 응답의 텍스트를 이어붙여
+        # 완성한다 — 처음부터 다시 생성하는 것보다 훨씬 저렴하고 빠르다.
+        first_text = "".join(b.text for b in resp.content if b.type == "text")
+        continue_messages = messages + [{"role": "assistant", "content": resp.content}]
+        continue_kwargs = dict(request_kwargs)
+        continue_kwargs.pop("tools", None)  # 이어쓰기 단계에서는 추가 검색이 필요 없음
+        cont_resp = client.messages.create(messages=continue_messages, **continue_kwargs)
+        cont_text = "".join(b.text for b in cont_resp.content if b.type == "text")
+        combined = _strip_fence(first_text + cont_text)
+        try:
+            return json.loads(combined)
+        except json.JSONDecodeError:
+            pass
+        if cont_resp.stop_reason == "max_tokens":
+            raise RuntimeError(
+                f"AI 응답이 이어서 생성해도 다시 max_tokens({MAX_TOKENS})에서 잘렸습니다 — "
+                "상품 정보가 매우 많은 경우로 보입니다(구간/목적지 수가 많은 상품 등). "
+                "generator.py의 MAX_TOKENS를 더 늘리거나, 스타일 규칙에서 문장 길이를 "
+                "줄이도록 지시하세요.\n"
+                f"응답 마지막 300자: ...{cont_text[-300:]}"
+            )
         raise RuntimeError(
-            "AI 응답이 max_tokens(8000)에서 잘렸습니다 — JSON이 완성되지 못했습니다. "
-            "destinations 개수가 많거나 사업부 자료가 길 때 발생할 수 있습니다. "
-            "max_tokens를 더 늘리거나, 스타일 규칙에서 문장 길이를 줄이도록 지시하세요.\n"
-            f"응답 마지막 300자: ...{joined_text[-300:]}"
+            "AI 응답이 max_tokens에서 잘려서 이어쓰기를 시도했지만, 이어붙인 결과를 "
+            "JSON으로 파싱하지 못했습니다.\n"
+            f"응답 원문 일부: ...{combined[:500]}..."
         )
 
     result, joined_text = _extract_json(resp)
@@ -116,12 +142,12 @@ def generate_content(system_prompt, image_blocks=None, dry_run=False, enable_web
         retry_resp = client.messages.create(
             messages=retry_messages,
             model="claude-sonnet-5",
-            max_tokens=8000,
+            max_tokens=MAX_TOKENS,
             thinking={"type": "disabled"},
         )
         if retry_resp.stop_reason == "max_tokens":
             raise RuntimeError(
-                "JSON 전용 재요청도 max_tokens(8000)에서 잘렸습니다 — JSON이 완성되지 못했습니다."
+                f"JSON 전용 재요청도 max_tokens({MAX_TOKENS})에서 잘렸습니다 — JSON이 완성되지 못했습니다."
             )
         retry_result, retry_text = _extract_json(retry_resp)
         if retry_result is not None:
