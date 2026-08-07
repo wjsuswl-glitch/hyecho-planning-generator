@@ -29,7 +29,7 @@ SCHEMA_HINTS = {
   "cover": {"tagline": str, "product_name": str, "region_tag": str, "subtitle": str, "intro_copy": str},
   "watermark_label": str,
   "product_variant_type": str,
-  "background_story": {"kicker": str, "title": str, "content": str},
+  "background_story": {"title": str, "content": str},
   "why_reasons": [ {"title": str, "content": str} ],
   "destinations_heading": str,
   "destinations": [ {"title": str, "description": str, "region_tag": str} ],
@@ -46,8 +46,9 @@ SCHEMA_HINTS = {
   "season": {"title": str, "content": str, "stat_line": str},
   "season_table": [ {"month": str, "high": str, "low": str} ],
   "meal_info": {"question": str, "answer": str},
-  "altitude_profile": [ {"name": str, "altitude": str, "distance": str, "duration": str} ],
-  "safety_note": {"question": str, "answer": str}
+  "altitude_profile": [ {"name": str, "altitude": str, "distance": str, "duration": str, "highlight": str} ],
+  "safety_note": {"question": str, "answer": str},
+  "banner_copy": {"kicker": str, "title": str}
 }
 ※ cover.tagline: 표지 맨 위에 작게 들어가는 짧은 감성 문구 (2줄 이내, 꾸미는 말)
 ※ cover.product_name: 실제 상품명입니다. 여행지·노선·기간처럼 고객이 실제로 궁금해하는
@@ -71,15 +72,22 @@ SCHEMA_HINTS = {
   이동 여정), "크루즈"(선박이 핵심 이동수단), "고소·극한등반"(6,000m급 이상이거나 신청
   자격 제한이 있는 등반) 중 사업부 자료 내용에 맞는 하나를 고르세요. 애매하면 "육상"으로
   두세요.
-※ background_story: "OOO란?" 같은 여행지/노선의 배경·역사·유래를 설명하는 섹션입니다.
+※ background_story: 여행지/노선의 배경·역사·유래를 설명하는 섹션입니다. title(임팩트 있는
+  헤드라인, 예: "세계의 지붕을 잇는, 실크로드의 마지막 길")과 content(설명 문단)만
+  작성하세요. "OOO란?" 같은 형식적인 소제목(kicker)은 모든 상품 기획안에 기계적으로
+  반복되는 상투적 표현이라 절대 만들지 마세요 — title로 바로 임팩트 있게 시작하세요.
   사업부 자료에 이런 배경 설명이 없으면 웹 검색 도구로 사실을 확인한 뒤 채우세요
   (연도, 유래, 지리적 사실 등 구체적 정보일수록 검색으로 확인하고, 지어내지 마세요).
   검색 결과가 서로 다르거나 확인이 안 되는 세부사항은 그 부분만 빼고 확실한 내용만
   쓰세요. 검색으로도 못 찾으면 잘 알려진 일반 상식 수준에서만 채우세요.
-※ why_reasons: "왜 이 지역/노선인가"를 설명하는 이유 목록입니다. 실제 입력 내용에 근거해
-  2~4개 작성하세요. 타사 대비 명확한 차별점(유일 노선, 전문 인솔자 동행 등)이 사업부
-  자료에 있다면 "~와는 다릅니다", "비교해보면 답은 혜초" 같은 직접적인 비교 어조도
-  자연스럽게 쓸 수 있습니다 — 다만 실제로 비교할 근거가 있을 때만 이 톤을 쓰세요.
+※ why_reasons: "이 상품만의 차별점"을 설명하는 이유 목록입니다 (2~4개). 반드시 장소·코스·
+  풍광·일정·계절 한정성처럼 이 상품 고유의 요소만 다루세요 (예: "1년에 단 두 번만 열리는
+  계절", "타사가 가지 않는 숨은 트레킹 코스", "국내 유일의 노선"). "No 쇼핑/No 옵션",
+  "전 일정 인솔자 동행", 항공/호텔/이동수단처럼 상품과 무관하게 항상 제공되는 혜초 공통
+  서비스 요소는 여기 쓰지 마세요 — 그건 experience_points의 역할입니다. 타사 대비 명확한
+  차별점(유일 노선 등)이 사업부 자료에 있다면 "~와는 다릅니다", "비교해보면 답은 혜초"
+  같은 직접적인 비교 어조도 자연스럽게 쓸 수 있습니다 — 다만 실제로 비교할 근거가 있을
+  때만 이 톤을 쓰세요.
 ※ destinations: 위 예시는 배열 안에 원소 1개만 보여준 것입니다. 실제로는
   {"title": str, "description": str, "region_tag": str} 형태의 원소를 실제 입력에 있는 개수만큼
   반복하세요. region_tag는 그 목적지가 속한 지역/국가/성(省) 이름이며, 없으면 빈 문자열로 두세요.
@@ -93,7 +101,11 @@ SCHEMA_HINTS = {
   채우지 말고 title을 빈 문자열, specs를 빈 배열로 두세요.
 ※ destinations_heading: 목적지 소개 섹션의 제목입니다 (예: "OOO 하이라이트"). brand_tagline과는
   다른 문구로 작성하세요 (같은 말 반복 금지).
-※ experience_points: 노쇼핑/편안한 이동/독보적 일정 같은 "혜초만의 차별점" 카드 2~3개.
+※ experience_points: "혜초와 함께라면 편안한 이유" — 상품과 무관하게 항상 제공되는 혜초
+  공통 서비스 차별점 카드 2~4개입니다. No 쇼핑/No 옵션, 전 일정 인솔자 동행, 항공/호텔
+  등급, 전용 이동수단(전용차량·전세버스 등) 중 사업부 자료에서 확인되는 항목 위주로
+  구성하세요. 이 상품만의 장소·코스·계절 이야기는 절대 여기 쓰지 마세요 — 그건
+  why_reasons의 역할입니다. why_reasons와 문장이 겹치면 안 됩니다.
 ※ guide_profile: 인솔자·가이드·담당자의 실제 이력(경력, 등정/순례 횟수, 자격 등)이
   사업부 자료에 있을 때만 채우세요. 있지도 않은 인물이나 이력을 지어내지 마세요. 없으면
   빈 배열로 두세요.
@@ -102,6 +114,10 @@ SCHEMA_HINTS = {
   지명 하나가 아니라 여정 전체를 관통하는 주제로 작성하세요.
   highlights_heading은 highlights가 하나라도 있으면 절대 빈 값으로 두지 마세요 — 아래
   카드들을 한 문장으로 아우르는 제목입니다 (예: "한눈에 보는 여정 하이라이트!").
+※ season: 사계절 내내 상시 운영되는 상품이 아닌 이상 반드시 채우세요 (season.content를
+  비워두지 마세요). 최적기, 피해야 할 시기, 특정 계절에만 볼 수 있는 것(개화·단풍·적설 등)
+  처럼 이 상품에 실제로 해당하는 계절 정보를 구체적으로 담으세요. 사계절 상시 운영
+  상품(계절 영향이 없는 도심 관광 등)일 때만 비워도 됩니다.
 ※ season.stat_line: 계절 섹션 상단의 짧은 강조 배너 문구 (예: "최적기: O월~O월")
 ※ season_table: 월별 기온 등 계절 통계가 사업부 자료에 있을 때만 채우세요. 없으면 빈
   배열로 두세요.
@@ -114,7 +130,18 @@ SCHEMA_HINTS = {
   표준 안내 톤(과장 없이 사실 위주)을 따르되, 신청 자격 제한이나 환불 불가 조건처럼 사업부
   자료에 강한 경고성 유의사항이 있다면 완곡하게 순화하지 말고 사실대로 명확히 전달하세요.
   altitude_profile의 distance(구간 거리, 예: "15km")와 duration(소요시간, 예: "약 6시간")은
-  사업부 자료에 있을 때만 채우고, 없으면 빈 문자열로 두세요.
+  사업부 자료에 있을 때만 채우고, 없으면 빈 문자열로 두세요. altitude_profile의 highlight는
+  그 구간에서 볼 수 있는 풍경이나 경험(예: "빙하와 협곡이 빚어낸 장관", "만년설 봉우리
+  파노라마")을 8~14자 이내로 간결하게 채우세요 — 이름과 거리만 나열하지 말고 각 구간이
+  실제로 왜 매력적인지 알 수 있게 하세요. 사업부 자료의 설명에 근거해 작성하고, 자료에
+  없으면 지형·코스 특징에 기반해 일반적인 수준으로 자연스럽게 표현해도 됩니다(사실
+  날조는 금지, 표현은 허용).
+※ banner_copy: 배너에 들어갈 문구로, cover.tagline이나 cover.product_name을 그대로
+  재사용하지 마세요. 훨씬 짧고 강렬하게 압축한 별도 카피입니다. kicker는 감성적인 후킹
+  문구 1~2줄(예: "봄으로 물든 카라코람을 걷다"), title은 굵고 임팩트 있는 핵심 키워드
+  1~2줄(예: "1년에 단 두 번, 카라코람 하이라이트")입니다. 실제 상품명·표지 카피와 정확히
+  일치할 필요는 없습니다 — 상품의 가장 눈에 띄는 포인트만 뽑아 짧게 후킹하는 것이
+  목적입니다.
 ※ 사업부 자료에 정보가 부족한 필드(예: experience_points 문구)는 빈 값으로 두지
   말고, 사업부 자료의 사실에 기반해 정현지 문체로 자연스럽게 채워서 완성하세요. 단, destinations나
   route_compare, season_table, transport_spec.specs, guide_profile, meal_info,
@@ -172,7 +199,7 @@ def build_system_prompt(writer_style, category, parsed_sections, format_info, ha
 {STYLE_RULES[writer_style]}
 
 [레이아웃 규칙]
-why_hyecho와 season 섹션은 {"같은 슬라이드에 합쳐서" if LAYOUT_HINT[writer_style]=="combined" else "별도 슬라이드로 나눠서"} 구성하세요.
+why_reasons와 season 섹션은 {"같은 슬라이드에 합쳐서" if LAYOUT_HINT[writer_style]=="combined" else "별도 슬라이드로 나눠서"} 구성하세요.
 
 [웹 검색 도구]
 web_search 도구를 사용할 수 있습니다. 사업부 자료에 없는 배경지식·역사·지리적 사실이
@@ -182,9 +209,10 @@ web_search 도구를 사용할 수 있습니다. 사업부 자료에 없는 배�
 최종 응답은 오직 JSON 객체 하나만이어야 합니다.
 배너/지도 슬라이드는 {"포함" if BANNER_MAP_INCLUDE[writer_style] else "생략"}하세요.
 
-[고정 문구 뱅크]
-"혜초와 함께하면", "No 쇼핑! No 옵션!", "국내 유일", "전 일정 인솔자 동행"
-→ 문맥에 자연스럽게 녹여 쓰되 남발하지 않음
+[고정 문구 뱅크 — experience_points 전용]
+"혜초와 함께하면", "No 쇼핑! No 옵션!", "전 일정 인솔자 동행"
+→ experience_points에서만 문맥에 자연스럽게 녹여 쓰되 남발하지 않음. why_reasons에는
+이 문구들을 쓰지 마세요 (역할이 다릅니다 — 위 experience_points/why_reasons 설명 참고).
 
 {copy_instruction}
 
