@@ -68,6 +68,17 @@ def generate_content(system_prompt, image_blocks=None, dry_run=False, enable_web
             candidate = candidate.strip()
         return candidate
 
+    def _normalize(parsed):
+        """Claude가 스키마 객체 하나 대신 [{...}] 처럼 배열로 한 번 더 감싸서
+        내놓는 경우가 있다 — 프롬프트에 few-shot 예시가 JSON 배열로 통째로
+        박혀 있어서, 그 형태를 따라 최종 답변도 배열로 감싸버리는 것으로 보인다.
+        원소 1개짜리 배열이면 그 안의 딕셔너리를 꺼내 정상적인 스키마 객체로
+        취급한다(내용 자체는 멀쩡한데 겉모양만 다른 경우를 빈 뼈대로 오판하지
+        않기 위함)."""
+        if isinstance(parsed, list) and len(parsed) == 1 and isinstance(parsed[0], dict):
+            return parsed[0]
+        return parsed
+
     def _extract_json(response):
         """응답의 텍스트 블록에서 JSON을 찾는다. 웹 검색이 켜지면 Claude가 최종
         JSON 앞에 검색 과정을 설명하는 서술문 텍스트 블록을 함께 내보낼 수 있어서,
@@ -78,18 +89,20 @@ def generate_content(system_prompt, image_blocks=None, dry_run=False, enable_web
         for block in reversed(text_blocks):
             candidate = _strip_fence(block)
             try:
-                return json.loads(candidate), joined_text
+                return _normalize(json.loads(candidate)), joined_text
             except json.JSONDecodeError:
                 continue
-        # 블록 단위로도 안 되면 전체를 이어붙인 텍스트에서 가장 바깥쪽 {...}만 추출해본다.
-        start = joined_text.find("{")
-        end = joined_text.rfind("}")
-        if start != -1 and end > start:
-            candidate = joined_text[start:end + 1]
-            try:
-                return json.loads(candidate), joined_text
-            except json.JSONDecodeError:
-                pass
+        # 블록 단위로도 안 되면 전체를 이어붙인 텍스트에서 가장 바깥쪽 중괄호나
+        # 대괄호로 감싸인 부분을 추출해본다(배열로 감싸 나오는 경우 대비 둘 다 확인).
+        for open_ch, close_ch in (("{", "}"), ("[", "]")):
+            start = joined_text.find(open_ch)
+            end = joined_text.rfind(close_ch)
+            if start != -1 and end > start:
+                candidate = joined_text[start:end + 1]
+                try:
+                    return _normalize(json.loads(candidate)), joined_text
+                except json.JSONDecodeError:
+                    pass
         return None, joined_text
 
     def _is_substantive(result):
@@ -125,7 +138,7 @@ def generate_content(system_prompt, image_blocks=None, dry_run=False, enable_web
         combined = _strip_fence(first_text + cont_text)
         result = None
         try:
-            result = json.loads(combined)
+            result = _normalize(json.loads(combined))
         except json.JSONDecodeError:
             pass
         if result is not None and _is_substantive(result):
