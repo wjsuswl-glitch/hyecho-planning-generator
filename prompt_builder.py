@@ -41,8 +41,6 @@ SCHEMA_HINTS = {
   "brand_tagline": str,
   "experience_points": [ {"title": str, "description": str} ],
   "guide_profile": [ {"name": str, "title": str, "bio": str} ],
-  "highlights_heading": str,
-  "highlights": [ {"title": str, "description": str} ],
   "season": {"title": str, "content": str, "stat_line": str},
   "season_table": [ {"month": str, "high": str, "low": str} ],
   "meal_info": {"question": str, "answer": str},
@@ -51,6 +49,11 @@ SCHEMA_HINTS = {
   "banner_copy": {"kicker": str, "title": str}
 }
 ※ cover.tagline: 표지 맨 위에 작게 들어가는 짧은 감성 문구 (2줄 이내, 꾸미는 말)
+※ cover.region_tag: 여러 국가·지역을 넘나드는 상품일 때만 그 범위를 짚어주는 상위
+  지역명(예: "남미 5개국 완전일주"라면 "남아메리카")을 채우세요. 단일 국가/지역만
+  방문하는 상품이면 반드시 빈 문자열로 두세요 — product_name에 이미 그 나라/지역명이
+  들어가는 경우가 많아(예: "멕시코 문명기행 13일") 표지에 같은 지명이 또 한 번
+  나오면 불필요한 중복입니다.
 ※ cover.product_name: 실제 상품명입니다. 여행지·노선·기간처럼 고객이 실제로 궁금해하는
   핵심 정보만 자연스러운 하나의 문장/구로 담으세요 (예: "사천에서 티벳까지 천장공로 12일").
   대괄호는 절대 쓰지 마세요. 사업부 자료 제목의 대괄호 태그는 다음 두 종류를 구분해서
@@ -109,11 +112,6 @@ SCHEMA_HINTS = {
 ※ guide_profile: 인솔자·가이드·담당자의 실제 이력(경력, 등정/순례 횟수, 자격 등)이
   사업부 자료에 있을 때만 채우세요. 있지도 않은 인물이나 이력을 지어내지 마세요. 없으면
   빈 배열로 두세요.
-※ highlights_heading, highlights: destinations와는 다른, 더 큰 테마 단위의 "여정 하이라이트"
-  입니다 (예: "국내 유일 육로 횡단", "매일 변화하는 풍경", "문화의 공존" 등 3~4개). 특정
-  지명 하나가 아니라 여정 전체를 관통하는 주제로 작성하세요.
-  highlights_heading은 highlights가 하나라도 있으면 절대 빈 값으로 두지 마세요 — 아래
-  카드들을 한 문장으로 아우르는 제목입니다 (예: "한눈에 보는 여정 하이라이트!").
 ※ season: 사계절 내내 상시 운영되는 상품이 아닌 이상 반드시 채우세요 (season.content를
   비워두지 마세요). 최적기, 피해야 할 시기, 특정 계절에만 볼 수 있는 것(개화·단풍·적설 등)
   처럼 이 상품에 실제로 해당하는 계절 정보를 구체적으로 담으세요. 사계절 상시 운영
