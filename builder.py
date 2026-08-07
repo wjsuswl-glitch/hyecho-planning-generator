@@ -622,12 +622,23 @@ def build_banner_request_slide(flow, cover, banner_copy=None):
     눈에 띄는 포인트만 뽑아 훨씬 짧고 강렬하게 압축한 별도 카피를 쓴다(첨부 배너
     예시: "봄으로 물든 차마고도를 걷다 / 카피할 수 없는 오리지널의 위엄" +
     "세계 3대 트레킹 / 호도협·옥룡설산"). banner_copy가 있으면 그걸 쓰고, AI가
-    누락했을 때만 cover 필드로 대체(하위 호환)."""
+    누락했을 때만 cover 필드로 대체(하위 호환).
+
+    메인 와이드 배너와 나머지 3개 배너는 텍스트 줄 구성이 다르다 — 실제 배너
+    예시(위 "세계 3대 트레킹 / 호도협·옥룡설산")를 보면 두 번째 줄은 후킹 카피가
+    아니라 실제 지명/상품명이다. 그런데 예전 코드는 4개 슬롯 모두 kicker+title
+    두 줄을 그대로 복붙해서 상품명이 어디에도 노출되지 않는 문제가 있었다(멕시코
+    문명기행 테스트에서 확인됨) — 메인 와이드 배너만 kicker+title(후킹 카피 2줄)
+    을 유지하고, 나머지 3개는 kicker(후킹 한 줄) + product_name(실제 상품명)으로
+    바꿔 상품명이 반드시 한 번은 노출되게 한다."""
     slide = flow.new_slide()
     banner_copy = banner_copy or {}
     kicker = banner_copy.get("kicker") or cover.get("tagline", "")
     title = banner_copy.get("title") or cover.get("product_name", "")
-    tagline_title = f"{kicker}\n{title}"
+    product_name = cover.get("product_name", "")
+
+    main_banner_text = f"{kicker}\n{title}"
+    sub_banner_text = f"{kicker}\n{product_name}" if product_name else kicker
 
     add_section_bar(slide, Inches(0), "배너 기획", height=Inches(0.47), size=14)
     add_text(slide, Inches(0.106), Inches(0.675), Inches(1.717), Inches(0.404),
@@ -635,33 +646,33 @@ def build_banner_request_slide(flow, cover, banner_copy=None):
     add_text(slide, Inches(1.823), Inches(0.733), Inches(4.672), Inches(0.303),
               "홈페이지 개편에 따라, 배너 디자인이 전면 교체되었습니다.", size=9, color=MUTED_COLOR)
 
-    # 메인 와이드 배너
+    # 메인 와이드 배너 — 부제 2줄(kicker+title, 후킹 카피)
     add_text(slide, Inches(0.106), Inches(1.271), Inches(5.701), Inches(0.303),
               "메인 와이드 배너 (PC: 1920x700, MO: 750x510), 가이드라인에 맞춰 제작", size=9, color=MUTED_COLOR)
     add_image_placeholder(slide, Inches(0.217), Inches(1.630), Inches(5.475), Inches(1.817), "이미지")
     add_text(slide, Inches(0.388), Inches(2.158), Inches(5.133), Inches(0.640),
-              tagline_title, size=13, bold=True, align=PP_ALIGN.CENTER)
+              main_banner_text, size=13, bold=True, align=PP_ALIGN.CENTER)
 
-    # 서브메인 띠배너
+    # 서브메인 띠배너 — 부제 1줄(kicker) + 상품명
     add_text(slide, Inches(0.081), Inches(3.581), Inches(5.642), Inches(0.303),
               "서브메인 띠배너 (PC: 1920x200, MO: 750x200), 가이드라인에 맞춰 제작", size=9, color=MUTED_COLOR)
     add_image_placeholder(slide, Inches(0.136), Inches(4.021), Inches(7.028), Inches(0.979), "이미지")
     add_text(slide, Inches(1.184), Inches(4.173), Inches(5.133), Inches(0.640),
-              tagline_title, size=13, bold=True, align=PP_ALIGN.CENTER)
+              sub_banner_text, size=13, bold=True, align=PP_ALIGN.CENTER)
 
-    # 서브메인 2단배너
+    # 서브메인 2단배너 — 부제 1줄(kicker) + 상품명
     add_text(slide, Inches(0.136), Inches(5.137), Inches(5.642), Inches(0.303),
               "서브메인 2단배너 (PC: 590x370, MO: 585x670), 가이드라인에 맞춰 제작", size=9, color=MUTED_COLOR)
     add_image_placeholder(slide, Inches(0.221), Inches(5.521), Inches(2.835), Inches(1.771), "이미지")
     add_text(slide, Inches(0.288), Inches(6.138), Inches(2.835), Inches(0.454),
-              tagline_title, size=11, bold=True, align=PP_ALIGN.CENTER)
+              sub_banner_text, size=11, bold=True, align=PP_ALIGN.CENTER)
 
-    # 지역 리스트 배너
+    # 지역 리스트 배너 — 부제 1줄(kicker) + 상품명
     add_text(slide, Inches(0.205), Inches(7.481), Inches(5.701), Inches(0.303),
               "지역 리스트 배너 (PC: 1200x207, MO: 750x207), 가이드라인에 맞춰 제작", size=9, color=MUTED_COLOR)
     add_image_placeholder(slide, Inches(0.316), Inches(7.989), Inches(6.871), Inches(1.336), "이미지")
     add_text(slide, Inches(1.184), Inches(8.280), Inches(5.133), Inches(0.640),
-              tagline_title, size=13, bold=True, align=PP_ALIGN.CENTER)
+              sub_banner_text, size=13, bold=True, align=PP_ALIGN.CENTER)
 
     return slide
 
@@ -691,11 +702,12 @@ def build(content_json, out_path):
         content_json.get("experience_points"),
     )
     build_guide_slide(flow, content_json.get("guide_profile"))
-    build_highlights_slides(
-        flow,
-        content_json.get("highlights"),
-        heading=content_json.get("highlights_heading"),
-    )
+    # highlights/highlights_heading 필드는 제거됨 — why_reasons("포인트 0N" 섹션)와
+    # 지시문이 실질적으로 같은 "상품 차별점/테마 하이라이트" 내용을 요구해, AI가 같은
+    # 내용을 문구만 바꿔 두 번 반복하는 문제가 반복 발생했다(예: 멕시코 문명기행
+    # 테스트에서 "칸쿤 없이 완성하는 내륙 문명 루트" 등 4개 항목이 포인트 섹션과
+    # 하이라이트 섹션에 그대로 중복). 스키마에서 highlights를 없애 why_reasons
+    # 하나로 통일한다(build_highlights_slides 함수 자체는 향후 필요시를 위해 남겨둠).
     build_season_slide(flow, content_json.get("season", {}), content_json.get("season_table"))
     build_meal_slide(flow, content_json.get("meal_info"))
     build_safety_slide(flow, content_json.get("altitude_profile"), content_json.get("safety_note"))
