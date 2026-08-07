@@ -47,21 +47,10 @@ def generate_content(system_prompt, image_blocks=None, dry_run=False, enable_web
         resp = client.messages.create(messages=messages, **request_kwargs)
         resume_attempts += 1
 
-    text_blocks = [b.text for b in resp.content if b.type == "text"]
-    joined_text = "".join(text_blocks).strip()
-
     if resp.stop_reason == "refusal":
         raise RuntimeError(
             "AI가 안전 정책상 이 요청을 거부했습니다(stop_reason=refusal). "
             "웹 검색 대상 자료나 상품 내용에 민감한 표현이 없는지 확인해주세요."
-        )
-
-    if resp.stop_reason == "max_tokens":
-        raise RuntimeError(
-            "AI 응답이 max_tokens(8000)에서 잘렸습니다 — JSON이 완성되지 못했습니다. "
-            "destinations 개수가 많거나 사업부 자료가 길 때 발생할 수 있습니다. "
-            "max_tokens를 더 늘리거나, 스타일 규칙에서 문장 길이를 줄이도록 지시하세요.\n"
-            f"응답 마지막 300자: ...{joined_text[-300:]}"
         )
 
     def _strip_fence(candidate):
@@ -73,27 +62,73 @@ def generate_content(system_prompt, image_blocks=None, dry_run=False, enable_web
             candidate = candidate.strip()
         return candidate
 
-    # 웹 검색이 켜지면 Claude가 최종 JSON 앞에 검색 과정을 설명하는 서술문
-    # 텍스트 블록을 함께 내보낼 수 있다. 뒤에서부터(최종 답변일 가능성이 높은
-    # 블록부터) 순서대로 JSON 파싱을 시도해 서술문을 건너뛴다.
-    for block in reversed(text_blocks):
-        candidate = _strip_fence(block)
-        try:
-            return json.loads(candidate)
-        except json.JSONDecodeError:
-            continue
+    def _extract_json(response):
+        """응답의 텍스트 블록에서 JSON을 찾는다. 웹 검색이 켜지면 Claude가 최종
+        JSON 앞에 검색 과정을 설명하는 서술문 텍스트 블록을 함께 내보낼 수 있어서,
+        뒤에서부터(최종 답변일 가능성이 높은 블록부터) 순서대로 파싱을 시도해
+        서술문을 건너뛴다. 실패 시 (None, 이어붙인 원문 텍스트)를 반환한다."""
+        text_blocks = [b.text for b in response.content if b.type == "text"]
+        joined_text = "".join(text_blocks).strip()
+        for block in reversed(text_blocks):
+            candidate = _strip_fence(block)
+            try:
+                return json.loads(candidate), joined_text
+            except json.JSONDecodeError:
+                continue
+        # 블록 단위로도 안 되면 전체를 이어붙인 텍스트에서 가장 바깥쪽 {...}만 추출해본다.
+        start = joined_text.find("{")
+        end = joined_text.rfind("}")
+        if start != -1 and end > start:
+            candidate = joined_text[start:end + 1]
+            try:
+                return json.loads(candidate), joined_text
+            except json.JSONDecodeError:
+                pass
+        return None, joined_text
 
-    # 블록 단위로도 안 되면 전체를 이어붙인 텍스트에서 가장 바깥쪽 {...}만 추출해본다.
-    start = joined_text.find("{")
-    end = joined_text.rfind("}")
-    if start != -1 and end > start:
-        candidate = joined_text[start:end + 1]
-        try:
-            return json.loads(candidate)
-        except json.JSONDecodeError:
-            pass
+    if resp.stop_reason == "max_tokens":
+        _, joined_text = _extract_json(resp)
+        raise RuntimeError(
+            "AI 응답이 max_tokens(8000)에서 잘렸습니다 — JSON이 완성되지 못했습니다. "
+            "destinations 개수가 많거나 사업부 자료가 길 때 발생할 수 있습니다. "
+            "max_tokens를 더 늘리거나, 스타일 규칙에서 문장 길이를 줄이도록 지시하세요.\n"
+            f"응답 마지막 300자: ...{joined_text[-300:]}"
+        )
+
+    result, joined_text = _extract_json(resp)
+    if result is not None:
+        return result
+
+    # 검색을 많이 반복하다 보면(특히 max_uses 한도에 걸렸을 때) Claude가 "검색을
+    # 진행하겠습니다 / 결과를 확인했습니다" 같은 서술문만 내놓고 최종 JSON을 아예
+    # 못 내는 경우가 있다 — 이미 확보한 검색 결과가 대화 맥락에 남아있으니, 도구
+    # 없이 "설명 없이 JSON만 출력하라"고 한 번 더 요청해서 복구를 시도한다
+    # (검색 결과를 버리고 처음부터 다시 시도하는 것보다 훨씬 저렴하고 빠르다).
+    if enable_web_search:
+        retry_messages = messages + [
+            {"role": "assistant", "content": resp.content},
+            {"role": "user", "content": (
+                "지금까지 확인한 정보만으로 충분합니다. 추가 검색이나 설명 문장 없이, "
+                "위에서 지시한 스키마에 맞는 최종 JSON 객체 하나만 출력하세요. "
+                "'~하겠습니다', '~확인했습니다' 같은 진행 설명은 한 글자도 포함하지 마세요."
+            )},
+        ]
+        retry_resp = client.messages.create(
+            messages=retry_messages,
+            model="claude-sonnet-5",
+            max_tokens=8000,
+            thinking={"type": "disabled"},
+        )
+        if retry_resp.stop_reason == "max_tokens":
+            raise RuntimeError(
+                "JSON 전용 재요청도 max_tokens(8000)에서 잘렸습니다 — JSON이 완성되지 못했습니다."
+            )
+        retry_result, retry_text = _extract_json(retry_resp)
+        if retry_result is not None:
+            return retry_result
+        joined_text = retry_text
 
     raise RuntimeError(
-        "AI 응답에서 JSON을 찾지 못했습니다.\n"
+        "AI 응답에서 JSON을 찾지 못했습니다(설명 없이 JSON만 출력하라는 재요청도 실패).\n"
         f"응답 원문 일부: ...{joined_text[:500]}..."
     )
