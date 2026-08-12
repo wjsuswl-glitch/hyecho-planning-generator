@@ -624,21 +624,37 @@ def build_banner_request_slide(flow, cover, banner_copy=None):
     "세계 3대 트레킹 / 호도협·옥룡설산"). banner_copy가 있으면 그걸 쓰고, AI가
     누락했을 때만 cover 필드로 대체(하위 호환).
 
-    메인 와이드 배너와 나머지 3개 배너는 텍스트 줄 구성이 다르다 — 실제 배너
-    예시(위 "세계 3대 트레킹 / 호도협·옥룡설산")를 보면 두 번째 줄은 후킹 카피가
-    아니라 실제 지명/상품명이다. 그런데 예전 코드는 4개 슬롯 모두 kicker+title
-    두 줄을 그대로 복붙해서 상품명이 어디에도 노출되지 않는 문제가 있었다(멕시코
-    문명기행 테스트에서 확인됨) — 메인 와이드 배너만 kicker+title(후킹 카피 2줄)
-    을 유지하고, 나머지 3개는 kicker(후킹 한 줄) + product_name(실제 상품명)으로
-    바꿔 상품명이 반드시 한 번은 노출되게 한다."""
+    4개 슬롯 모두 "부제(후킹 카피) + 상품명" 두 요소를 함께 넣는다 — 실제 배너
+    예시(위 "세계 3대 트레킹 / 호도협·옥룡설산")를 보면 부제와 상품명이 같은
+    텍스트 크기로 나열되어 보이지만, 실무에서는 상품명을 부제보다 작게 눌러줘야
+    부제(후킹 문구)가 시선을 먼저 받는다. 부제와 상품명을 하나의 멀티라인
+    텍스트박스에 같은 크기로 합쳐 넣으면(예전 방식) 상품명이 부제와 똑같은
+    굵기/크기라 위계가 안 생기고, 심지어 메인 와이드 배너는 상품명 자체가
+    빠지는 버그가 있었다(카라코람 테스트에서 확인됨) — 이제 부제와 상품명을
+    별도 텍스트박스로 쌓아 크기를 다르게 주고, 4개 슬롯 전부에 상품명을 반드시
+    포함시킨다."""
     slide = flow.new_slide()
     banner_copy = banner_copy or {}
     kicker = banner_copy.get("kicker") or cover.get("tagline", "")
     title = banner_copy.get("title") or cover.get("product_name", "")
     product_name = cover.get("product_name", "")
 
-    main_banner_text = f"{kicker}\n{title}"
-    sub_banner_text = f"{kicker}\n{product_name}" if product_name else kicker
+    def _add_banner_copy(left, top, width, subtitle_text, subtitle_size, name_size):
+        """부제(굵고 큰 글씨)를 먼저 쌓고, 그 아래 상품명(더 작은 글씨)을 이어
+        쌓는다 — 실제 들어간 줄 수에 맞춰 높이를 추정해서 다음 요소랑 안 겹치게
+        한다."""
+        y = top
+        if subtitle_text:
+            h = estimate_text_height(subtitle_text, subtitle_size, width, bold=True)
+            add_text(slide, left, y, width, h, subtitle_text, size=subtitle_size,
+                      bold=True, align=PP_ALIGN.CENTER)
+            y += h
+        if product_name:
+            h = estimate_text_height(product_name, name_size, width)
+            add_text(slide, left, y, width, h, product_name, size=name_size,
+                      color=MUTED_COLOR, align=PP_ALIGN.CENTER)
+            y += h
+        return y
 
     add_section_bar(slide, Inches(0), "배너 기획", height=Inches(0.47), size=14)
     add_text(slide, Inches(0.106), Inches(0.675), Inches(1.717), Inches(0.404),
@@ -646,33 +662,33 @@ def build_banner_request_slide(flow, cover, banner_copy=None):
     add_text(slide, Inches(1.823), Inches(0.733), Inches(4.672), Inches(0.303),
               "홈페이지 개편에 따라, 배너 디자인이 전면 교체되었습니다.", size=9, color=MUTED_COLOR)
 
-    # 메인 와이드 배너 — 부제 2줄(kicker+title, 후킹 카피)
+    # 메인 와이드 배너 — 부제 2줄(kicker+title, 후킹 카피, size 13) + 상품명(size 10)
     add_text(slide, Inches(0.106), Inches(1.271), Inches(5.701), Inches(0.303),
               "메인 와이드 배너 (PC: 1920x700, MO: 750x510), 가이드라인에 맞춰 제작", size=9, color=MUTED_COLOR)
     add_image_placeholder(slide, Inches(0.217), Inches(1.630), Inches(5.475), Inches(1.817), "이미지")
-    add_text(slide, Inches(0.388), Inches(2.158), Inches(5.133), Inches(0.640),
-              main_banner_text, size=13, bold=True, align=PP_ALIGN.CENTER)
+    _add_banner_copy(Inches(0.388), Inches(2.158), Inches(5.133),
+                      f"{kicker}\n{title}", subtitle_size=13, name_size=10)
 
-    # 서브메인 띠배너 — 부제 1줄(kicker) + 상품명
+    # 서브메인 띠배너 — 부제 1줄(kicker, size 13) + 상품명(size 10)
     add_text(slide, Inches(0.081), Inches(3.581), Inches(5.642), Inches(0.303),
               "서브메인 띠배너 (PC: 1920x200, MO: 750x200), 가이드라인에 맞춰 제작", size=9, color=MUTED_COLOR)
     add_image_placeholder(slide, Inches(0.136), Inches(4.021), Inches(7.028), Inches(0.979), "이미지")
-    add_text(slide, Inches(1.184), Inches(4.173), Inches(5.133), Inches(0.640),
-              sub_banner_text, size=13, bold=True, align=PP_ALIGN.CENTER)
+    _add_banner_copy(Inches(1.184), Inches(4.173), Inches(5.133),
+                      kicker, subtitle_size=13, name_size=10)
 
-    # 서브메인 2단배너 — 부제 1줄(kicker) + 상품명
+    # 서브메인 2단배너 — 부제 1줄(kicker, size 11) + 상품명(size 9)
     add_text(slide, Inches(0.136), Inches(5.137), Inches(5.642), Inches(0.303),
               "서브메인 2단배너 (PC: 590x370, MO: 585x670), 가이드라인에 맞춰 제작", size=9, color=MUTED_COLOR)
     add_image_placeholder(slide, Inches(0.221), Inches(5.521), Inches(2.835), Inches(1.771), "이미지")
-    add_text(slide, Inches(0.288), Inches(6.138), Inches(2.835), Inches(0.454),
-              sub_banner_text, size=11, bold=True, align=PP_ALIGN.CENTER)
+    _add_banner_copy(Inches(0.288), Inches(6.138), Inches(2.835),
+                      kicker, subtitle_size=11, name_size=9)
 
-    # 지역 리스트 배너 — 부제 1줄(kicker) + 상품명
+    # 지역 리스트 배너 — 부제 1줄(kicker, size 13) + 상품명(size 10)
     add_text(slide, Inches(0.205), Inches(7.481), Inches(5.701), Inches(0.303),
               "지역 리스트 배너 (PC: 1200x207, MO: 750x207), 가이드라인에 맞춰 제작", size=9, color=MUTED_COLOR)
     add_image_placeholder(slide, Inches(0.316), Inches(7.989), Inches(6.871), Inches(1.336), "이미지")
-    add_text(slide, Inches(1.184), Inches(8.280), Inches(5.133), Inches(0.640),
-              sub_banner_text, size=13, bold=True, align=PP_ALIGN.CENTER)
+    _add_banner_copy(Inches(1.184), Inches(8.280), Inches(5.133),
+                      kicker, subtitle_size=13, name_size=10)
 
     return slide
 
@@ -692,6 +708,17 @@ def build(content_json, out_path):
         flow,
         content_json.get("destinations", []),
         section_title=content_json.get("destinations_heading"),
+        theme_line=None,
+    )
+    # tour_spots: 트레킹 상품 중 트레킹 코스 + 관광(도시/유적/박물관) 코스가 함께 있는
+    # 경우에만 채워진다 — 카라코람 테스트에서 훈자 마을/이슬라마바드/탁실라 박물관 같은
+    # "관광" 코스가 트레킹 코스(destinations)와 구분 없이 한 섹션에 섞여 나온 문제를
+    # 고치기 위해 별도 섹션으로 분리했다. build_destination_slides와 카드 레이아웃은
+    # 동일하고 헤딩만 다르다.
+    build_destination_slides(
+        flow,
+        content_json.get("tour_spots", []),
+        section_title=content_json.get("tour_spots_heading"),
         theme_line=None,
     )
     build_route_compare_slide(flow, content_json.get("route_compare"))
