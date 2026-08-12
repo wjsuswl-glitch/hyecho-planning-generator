@@ -1,6 +1,6 @@
 """혜초여행 기획안 자동생성 웹앱 (프로토타입)"""
 import streamlit as st
-import tempfile, os, json, sys
+import tempfile, os, json, sys, unicodedata
 
 sys.path.insert(0, os.path.dirname(__file__))
 from parser import parse_docx, detect_format_and_draft_copy, parse_pptx, encode_image_block
@@ -17,13 +17,18 @@ st.title("🧳 혜초여행 기획안 자동생성")
 st.caption("사업부 원본자료(docx/pptx/이미지, 최대 5개) → AI 카피 생성 → 기획안 PPTX")
 
 with open(TEMPLATE_MAP_PATH, encoding="utf-8") as f:
-    available_styles = list(json.load(f).keys())
+    # NFC로 정규화 — template_map.json이 macOS 등에서 자모 분리형(NFD)으로 저장돼
+    # 있으면, 화면엔 "최정인"으로 똑같이 보여도 prompt_builder.py에 NFC로 적힌
+    # STYLE_RULES 등 딕셔너리 키와 바이트 단위로 달라 KeyError가 난다("최정인"
+    # 추가 후 실제로 발생한 오류). 여기서 한 번 정규화해두면 이 값을 넘겨받는
+    # 모든 곳(build_system_prompt, writer_style in (...) 비교 등)이 안전해진다.
+    available_styles = [unicodedata.normalize("NFC", k) for k in json.load(f).keys()]
 
 col1, col2 = st.columns(2)
 with col1:
-    writer_style = st.selectbox("기획자 스타일", available_styles)
+    writer_style = unicodedata.normalize("NFC", st.selectbox("기획자 스타일", available_styles))
 with col2:
-    category = st.selectbox("카테고리", ["문탐", "트레킹"])
+    category = unicodedata.normalize("NFC", st.selectbox("카테고리", ["문탐", "트레킹"]))
 
 enable_web_search = st.checkbox(
     "사업부 자료에 없는 배경지식/사실을 웹 검색으로 보완",
