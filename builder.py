@@ -196,7 +196,16 @@ def build_cover_slide(flow, cover, watermark_label=""):
 def build_destination_slides(flow, destinations, section_title=None, theme_line=None):
     """목적지 개수만큼만 슬라이드를 만든다. 고정 개수로 나누지 않고, 실제 텍스트
     길이를 추정해서 한 슬라이드에 들어갈 수 있는 만큼만 채우고 넘치면 다음 슬라이드로.
-    첫 슬라이드는 이전 섹션이 남긴 여백에 이어 붙일 수 있으면 이어 붙인다."""
+    첫 슬라이드는 이전 섹션이 남긴 여백에 이어 붙일 수 있으면 이어 붙인다.
+
+    region_tag가 있는 방문지는 같은 그룹(성격이 비슷하거나 같은 지역)끼리 묶어서
+    그룹명을 소제목으로 한 번만 보여준다 — 예전엔 방문지마다 작은 라벨을 하나씩
+    달았는데, 그 라벨이 흰 글씨(WHITE)를 배경 없이 그냥 텍스트로 찍어서 화면에서
+    보이지도 않았고(멕시코 문명기행 테스트로 확인), 설령 보였어도 방문지 하나하나에
+    태그만 붙을 뿐 "묶어서 보여주는" 느낌은 아니었다. 사업부 자료에 이미 있는 그룹
+    구조(예: "[ 사포테카 문명 | 와하카 ]")를 살려 지역/테마별로 소제목 아래 방문지를
+    들여쓰기해서 묶어 보여주도록 다시 짰다 — region_tag가 없는 방문지는 예전처럼
+    그룹 소제목 없이 그냥 나열된다(하위 호환)."""
     if not destinations:
         return []
     slides = []
@@ -204,6 +213,7 @@ def build_destination_slides(flow, destinations, section_title=None, theme_line=
     first_slide = True
     header_h = (Inches(0.55) if section_title else Inches(0)) + \
                (Inches(0.4) if theme_line else Inches(0))
+    current_group = None  # 화면에 마지막으로 그린 그룹명 — 슬라이드가 넘어가도 유지
 
     while idx < len(destinations):
         if first_slide:
@@ -220,30 +230,47 @@ def build_destination_slides(flow, destinations, section_title=None, theme_line=
         else:
             slide = flow.new_slide()
             y = flow.y
+            # 그룹이 슬라이드 경계를 넘어 이어지면, 새 슬라이드 맨 위에서도 그룹명을
+            # 다시 보여준다 — 안 그러면 방문지가 갑자기 그룹 없이 나온 것처럼 보인다.
+            if current_group:
+                label_h = estimate_text_height(current_group, 13, CONTENT_W, bold=True)
+                add_text(slide, MARGIN, y, CONTENT_W, label_h, current_group, size=13,
+                          bold=True, color=ACCENT_COLOR)
+                y += label_h + Inches(0.15)
 
+        indent = Inches(0.15)  # 그룹에 속한 방문지는 소제목 아래 있다는 느낌을 주기 위해 살짝 들여씀
         placed_any = False
         while idx < len(destinations):
             dest = destinations[idx]
-            region_tag = dest.get("region_tag")
-            title_h = estimate_text_height(dest.get("title", ""), 15, CONTENT_W, bold=True)
+            group = dest.get("region_tag") or None
+            is_new_group = bool(group) and group != current_group
+            title_w = CONTENT_W - (indent if group else Inches(0))
+            title_h = estimate_text_height(dest.get("title", ""), 15, title_w, bold=True)
             image_h = Inches(0.45)
-            desc_h = estimate_text_height(dest.get("description", ""), 12, CONTENT_W)
-            block_h = (Inches(0.28) if region_tag else Inches(0)) + title_h + Inches(0.06) \
-                + image_h + Inches(0.1) + desc_h + Inches(0.18)
+            desc_h = estimate_text_height(dest.get("description", ""), 12, title_w)
+            group_label_h = Inches(0)
+            if is_new_group:
+                group_label_h = estimate_text_height(group, 13, CONTENT_W, bold=True) + Inches(0.15)
+            block_h = group_label_h + title_h + Inches(0.06) + image_h + Inches(0.1) \
+                + desc_h + Inches(0.18)
 
             if placed_any and y + block_h > flow.bottom_limit:
                 break  # 이 슬라이드엔 더 안 들어감 -> 다음 슬라이드로
 
-            if region_tag:
-                add_text(slide, MARGIN, y, Inches(1.2), Inches(0.25), region_tag,
-                          size=10, bold=True, color=WHITE)
-                y += Inches(0.28)
-            add_text(slide, MARGIN, y, CONTENT_W, title_h, dest.get("title", ""),
+            if is_new_group:
+                label_h = group_label_h - Inches(0.15)
+                add_text(slide, MARGIN, y, CONTENT_W, label_h, group, size=13,
+                          bold=True, color=ACCENT_COLOR)
+                y += group_label_h
+                current_group = group
+
+            x = MARGIN + (indent if group else Inches(0))
+            add_text(slide, x, y, title_w, title_h, dest.get("title", ""),
                       size=15, bold=True)
             y += title_h + Inches(0.06)
             add_small_image_placeholder(slide, y, Inches(1.6), image_h, "이미지")
             y += image_h + Inches(0.1)
-            add_text(slide, MARGIN, y, CONTENT_W, desc_h, dest.get("description", ""),
+            add_text(slide, x, y, title_w, desc_h, dest.get("description", ""),
                       size=12, color=MUTED_COLOR)
             y += desc_h + Inches(0.18)
 
