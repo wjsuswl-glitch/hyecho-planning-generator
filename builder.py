@@ -149,25 +149,38 @@ class SlideFlow:
 # ---------------------------------------------------------------------------
 
 def build_cover_slide(flow, cover, watermark_label=""):
+    """표지 슬라이드. tagline/product_name/subtitle 모두 고정 높이를 확보해두고
+    있었는데, 이 셋 다 AI가 채우는 가변 길이 텍스트라 길어지면 예상보다 줄바꿈이
+    늘어 바로 아래 요소와 겹칠 수 있다(background_story에서 실제로 발생한 것과
+    같은 문제 — 표지는 모든 상품에서 항상 렌더링되는 슬라이드라 잠재 위험이 가장
+    크다). estimate_text_height로 실제 줄 수를 추정해 안전하게 확보한다."""
     slide = flow.new_slide()
     y = flow.y
-    add_text(slide, MARGIN, y, CONTENT_W, Inches(0.5), cover.get("tagline", ""),
+    tagline = cover.get("tagline", "")
+    tagline_h = estimate_text_height(tagline, 13, CONTENT_W) if tagline else Inches(0.5)
+    add_text(slide, MARGIN, y, CONTENT_W, tagline_h, tagline,
               size=13, color=MUTED_COLOR, align=PP_ALIGN.CENTER)
-    y += Inches(0.55)
-    add_text(slide, MARGIN, y, CONTENT_W, Inches(0.9), cover.get("product_name", ""),
+    y += tagline_h + Inches(0.05)
+
+    product_name = cover.get("product_name", "")
+    product_h = estimate_text_height(product_name, 26, CONTENT_W, bold=True) if product_name else Inches(0.9)
+    add_text(slide, MARGIN, y, CONTENT_W, product_h, product_name,
               size=26, bold=True, align=PP_ALIGN.CENTER)
-    y += Inches(0.95)
+    y += product_h + Inches(0.05)
+
     if cover.get("region_tag"):
-        add_text(slide, MARGIN, y, CONTENT_W, Inches(0.4), cover["region_tag"],
+        region_h = estimate_text_height(cover["region_tag"], 13, CONTENT_W)
+        add_text(slide, MARGIN, y, CONTENT_W, region_h, cover["region_tag"],
                   size=13, color=MUTED_COLOR, align=PP_ALIGN.CENTER)
-        y += Inches(0.45)
+        y += region_h + Inches(0.05)
     y += Inches(0.1)
     add_small_image_placeholder(slide, y, Inches(2.3), Inches(0.9), "메인 이미지")
     y += Inches(1.0)
     if cover.get("subtitle"):
-        add_text(slide, MARGIN, y, CONTENT_W, Inches(0.4), cover["subtitle"],
+        subtitle_h = estimate_text_height(cover["subtitle"], 14, CONTENT_W, bold=True)
+        add_text(slide, MARGIN, y, CONTENT_W, subtitle_h, cover["subtitle"],
                   size=14, bold=True, align=PP_ALIGN.CENTER)
-        y += Inches(0.45)
+        y += subtitle_h + Inches(0.05)
     intro_h = estimate_text_height(cover.get("intro_copy", ""), 12, CONTENT_W)
     add_text(slide, MARGIN, y, CONTENT_W, intro_h, cover.get("intro_copy", ""),
               size=12, color=MUTED_COLOR, align=PP_ALIGN.CENTER)
@@ -245,20 +258,28 @@ def build_destination_slides(flow, destinations, section_title=None, theme_line=
 def build_background_slide(flow, background_story):
     """배경 이야기 섹션. 예전엔 "OOO란?" 형태의 kicker 소제목을 title 위에 따로
     붙였는데, 모든 상품 기획안에 기계적으로 반복되는 상투적 표현이라 제거함
-    (title만으로 바로 임팩트 있게 시작 — prompt_builder.py도 함께 수정됨)."""
+    (title만으로 바로 임팩트 있게 시작 — prompt_builder.py도 함께 수정됨).
+
+    title은 20pt 굵은 글씨라 길면 2줄로 줄바꿈되는데, 예전엔 고정 Inches(0.55)만
+    확보해두고 그 아래 content를 바로 이어 그려서, title이 2줄이 되는 순간 content
+    첫 줄과 겹치는 버그가 있었다(카라코람 가을 버전 테스트에서 확인됨 — "실크로드의
+    마지막 관문, 카라코람이 품은 가을의 황금빛"이 2줄로 줄바꿈되며 바로 아래 문단과
+    겹쳤음). build_experience_slide/build_safety_slide와 같은 문제라 같은 방식
+    (estimate_text_height로 실제 높이 추정)으로 고친다."""
     if not background_story:
         return None
     title = background_story.get("title", "")
     content = background_story.get("content", "")
+    title_h = estimate_text_height(title, 20, CONTENT_W, bold=True) if title else Inches(0)
     content_h = estimate_text_height(content, 12, CONTENT_W)
-    total_h = (Inches(0.55) if title else Inches(0)) + content_h
+    total_h = (title_h + Inches(0.1) if title else Inches(0)) + content_h
 
     y = flow.ensure(total_h)
     slide = flow.slide
     if title:
-        add_text(slide, MARGIN, y, CONTENT_W, Inches(0.5), title,
+        add_text(slide, MARGIN, y, CONTENT_W, title_h, title,
                   size=20, bold=True, align=PP_ALIGN.CENTER)
-        y += Inches(0.55)
+        y += title_h + Inches(0.1)
     add_text(slide, MARGIN, y, CONTENT_W, content_h, content, size=12, align=PP_ALIGN.CENTER)
     y += content_h
     flow.y = y
@@ -366,14 +387,15 @@ def build_meal_slide(flow, meal_info):
     패턴으로, safety_note와 동일한 question/answer 구조를 재사용."""
     if not meal_info or not meal_info.get("question"):
         return None
+    question_h = estimate_text_height(meal_info["question"], 15, CONTENT_W, bold=True)
     ans_h = estimate_text_height(meal_info.get("answer", ""), 12, CONTENT_W)
-    total_h = Inches(0.5) + ans_h
+    total_h = question_h + Inches(0.1) + ans_h
 
     y = flow.ensure(total_h)
     slide = flow.slide
-    add_text(slide, MARGIN, y, CONTENT_W, Inches(0.4), meal_info["question"], size=15,
+    add_text(slide, MARGIN, y, CONTENT_W, question_h, meal_info["question"], size=15,
               bold=True, align=PP_ALIGN.CENTER)
-    y += Inches(0.5)
+    y += question_h + Inches(0.1)
     add_text(slide, MARGIN, y, CONTENT_W, ans_h, meal_info.get("answer", ""), size=12,
               align=PP_ALIGN.CENTER)
     y += ans_h
@@ -557,10 +579,12 @@ def build_safety_slide(flow, altitude_profile, safety_note):
     if not altitude_profile and not safety_note:
         return None
     ans_h = Inches(0)
+    question_h = Inches(0)
     qa_h = Inches(0)
     if safety_note and safety_note.get("question"):
+        question_h = estimate_text_height(safety_note["question"], 15, CONTENT_W, bold=True)
         ans_h = estimate_text_height(safety_note.get("answer", ""), 12, CONTENT_W)
-        qa_h = Inches(0.5) + ans_h + Inches(0.35)
+        qa_h = question_h + Inches(0.1) + ans_h + Inches(0.35)
 
     n = len(altitude_profile) if altitude_profile else 0
     col_w = CONTENT_W / max(n, 1)
@@ -587,9 +611,9 @@ def build_safety_slide(flow, altitude_profile, safety_note):
     y = flow.ensure(total_h)
     slide = flow.slide
     if safety_note and safety_note.get("question"):
-        add_text(slide, MARGIN, y, CONTENT_W, Inches(0.4), safety_note["question"], size=15,
+        add_text(slide, MARGIN, y, CONTENT_W, question_h, safety_note["question"], size=15,
                   bold=True, align=PP_ALIGN.CENTER)
-        y += Inches(0.5)
+        y += question_h + Inches(0.1)
         add_text(slide, MARGIN, y, CONTENT_W, ans_h, safety_note.get("answer", ""), size=12,
                   align=PP_ALIGN.CENTER)
         y += ans_h + Inches(0.35)
