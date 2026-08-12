@@ -624,15 +624,15 @@ def build_banner_request_slide(flow, cover, banner_copy=None):
     "세계 3대 트레킹 / 호도협·옥룡설산"). banner_copy가 있으면 그걸 쓰고, AI가
     누락했을 때만 cover 필드로 대체(하위 호환).
 
-    4개 슬롯 모두 "부제(후킹 카피) + 상품명" 두 요소를 함께 넣는다 — 실제 배너
-    예시(위 "세계 3대 트레킹 / 호도협·옥룡설산")를 보면 부제와 상품명이 같은
-    텍스트 크기로 나열되어 보이지만, 실무에서는 상품명을 부제보다 작게 눌러줘야
-    부제(후킹 문구)가 시선을 먼저 받는다. 부제와 상품명을 하나의 멀티라인
-    텍스트박스에 같은 크기로 합쳐 넣으면(예전 방식) 상품명이 부제와 똑같은
-    굵기/크기라 위계가 안 생기고, 심지어 메인 와이드 배너는 상품명 자체가
-    빠지는 버그가 있었다(카라코람 테스트에서 확인됨) — 이제 부제와 상품명을
-    별도 텍스트박스로 쌓아 크기를 다르게 주고, 4개 슬롯 전부에 상품명을 반드시
-    포함시킨다."""
+    4개 슬롯 모두 "부제(후킹 카피) + 상품명(타이틀)" 두 요소를 함께 넣는다. 처음엔
+    상품명을 부제보다 작게 눌러서 부제(후킹 문구)가 시선을 먼저 받게 했었는데,
+    실제 배너에서는 반대로 상품명(타이틀)이 메인 카피이고 부제는 그걸 보조하는
+    작은 문구라는 피드백을 받아 위계를 뒤집었다 — 부제는 작고 옅게, 상품명은
+    크고 굵게 렌더링한다. 부제와 상품명을 하나의 멀티라인 텍스트박스에 같은
+    크기로 합쳐 넣으면(예전 방식) 위계가 전혀 안 생기고, 심지어 메인 와이드
+    배너는 상품명 자체가 빠지는 버그가 있었다(카라코람 테스트에서 확인됨) —
+    부제와 상품명을 별도 텍스트박스로 쌓아 크기를 다르게 주고, 4개 슬롯 전부에
+    상품명을 반드시 포함시킨다."""
     slide = flow.new_slide()
     banner_copy = banner_copy or {}
     kicker = banner_copy.get("kicker") or cover.get("tagline", "")
@@ -640,19 +640,19 @@ def build_banner_request_slide(flow, cover, banner_copy=None):
     product_name = cover.get("product_name", "")
 
     def _add_banner_copy(left, top, width, subtitle_text, subtitle_size, name_size):
-        """부제(굵고 큰 글씨)를 먼저 쌓고, 그 아래 상품명(더 작은 글씨)을 이어
-        쌓는다 — 실제 들어간 줄 수에 맞춰 높이를 추정해서 다음 요소랑 안 겹치게
-        한다."""
+        """부제(작고 옅은 글씨)를 먼저 쌓고, 그 아래 상품명/타이틀(더 크고 굵은
+        글씨)을 이어 쌓는다 — 실제 들어간 줄 수에 맞춰 높이를 추정해서 다음
+        요소랑 안 겹치게 한다."""
         y = top
         if subtitle_text:
-            h = estimate_text_height(subtitle_text, subtitle_size, width, bold=True)
+            h = estimate_text_height(subtitle_text, subtitle_size, width)
             add_text(slide, left, y, width, h, subtitle_text, size=subtitle_size,
-                      bold=True, align=PP_ALIGN.CENTER)
+                      color=MUTED_COLOR, align=PP_ALIGN.CENTER)
             y += h
         if product_name:
-            h = estimate_text_height(product_name, name_size, width)
+            h = estimate_text_height(product_name, name_size, width, bold=True)
             add_text(slide, left, y, width, h, product_name, size=name_size,
-                      color=MUTED_COLOR, align=PP_ALIGN.CENTER)
+                      bold=True, align=PP_ALIGN.CENTER)
             y += h
         return y
 
@@ -662,39 +662,99 @@ def build_banner_request_slide(flow, cover, banner_copy=None):
     add_text(slide, Inches(1.823), Inches(0.733), Inches(4.672), Inches(0.303),
               "홈페이지 개편에 따라, 배너 디자인이 전면 교체되었습니다.", size=9, color=MUTED_COLOR)
 
-    # 메인 와이드 배너 — 부제 2줄(kicker+title, 후킹 카피, size 13) + 상품명(size 10)
+    # 메인 와이드 배너 — 부제 2줄(kicker+title, 후킹 카피, size 11) + 상품명(size 18, 굵게)
     add_text(slide, Inches(0.106), Inches(1.271), Inches(5.701), Inches(0.303),
               "메인 와이드 배너 (PC: 1920x700, MO: 750x510), 가이드라인에 맞춰 제작", size=9, color=MUTED_COLOR)
     add_image_placeholder(slide, Inches(0.217), Inches(1.630), Inches(5.475), Inches(1.817), "이미지")
     _add_banner_copy(Inches(0.388), Inches(2.158), Inches(5.133),
-                      f"{kicker}\n{title}", subtitle_size=13, name_size=10)
+                      f"{kicker}\n{title}", subtitle_size=11, name_size=18)
 
-    # 서브메인 띠배너 — 부제 1줄(kicker, size 13) + 상품명(size 10)
+    # 서브메인 띠배너 — 부제 1줄(kicker, size 11) + 상품명(size 16, 굵게)
     add_text(slide, Inches(0.081), Inches(3.581), Inches(5.642), Inches(0.303),
               "서브메인 띠배너 (PC: 1920x200, MO: 750x200), 가이드라인에 맞춰 제작", size=9, color=MUTED_COLOR)
     add_image_placeholder(slide, Inches(0.136), Inches(4.021), Inches(7.028), Inches(0.979), "이미지")
     _add_banner_copy(Inches(1.184), Inches(4.173), Inches(5.133),
-                      kicker, subtitle_size=13, name_size=10)
+                      kicker, subtitle_size=11, name_size=16)
 
-    # 서브메인 2단배너 — 부제 1줄(kicker, size 11) + 상품명(size 9)
+    # 서브메인 2단배너 — 부제 1줄(kicker, size 9) + 상품명(size 13, 굵게)
     add_text(slide, Inches(0.136), Inches(5.137), Inches(5.642), Inches(0.303),
               "서브메인 2단배너 (PC: 590x370, MO: 585x670), 가이드라인에 맞춰 제작", size=9, color=MUTED_COLOR)
     add_image_placeholder(slide, Inches(0.221), Inches(5.521), Inches(2.835), Inches(1.771), "이미지")
     _add_banner_copy(Inches(0.288), Inches(6.138), Inches(2.835),
-                      kicker, subtitle_size=11, name_size=9)
+                      kicker, subtitle_size=9, name_size=13)
 
-    # 지역 리스트 배너 — 부제 1줄(kicker, size 13) + 상품명(size 10)
+    # 지역 리스트 배너 — 부제 1줄(kicker, size 11) + 상품명(size 16, 굵게)
     add_text(slide, Inches(0.205), Inches(7.481), Inches(5.701), Inches(0.303),
               "지역 리스트 배너 (PC: 1200x207, MO: 750x207), 가이드라인에 맞춰 제작", size=9, color=MUTED_COLOR)
     add_image_placeholder(slide, Inches(0.316), Inches(7.989), Inches(6.871), Inches(1.336), "이미지")
     _add_banner_copy(Inches(1.184), Inches(8.280), Inches(5.133),
-                      kicker, subtitle_size=13, name_size=10)
+                      kicker, subtitle_size=11, name_size=16)
 
     return slide
 
 
-def build(content_json, out_path):
-    """content_json(정현지 스키마) -> 새 PPTX 파일 생성"""
+def build_review_notes_slide(flow, review):
+    """Gemini 교차검수 결과를 PPTX 마지막 페이지에 그대로 남긴다 — 예전엔 Streamlit
+    화면에만 표시되고 다운로드한 PPTX에는 안 남아서, 파일만 디자이너/다른 담당자에게
+    넘기면 검수 내역이 통째로 사라지는 문제가 있었다. review가 없거나 검수 자체를
+    건너뛴 경우(_dry_run — GEMINI_API_KEY 미설정)는 내용 없는 안내 페이지를 억지로
+    넣지 않기 위해 슬라이드를 만들지 않는다."""
+    if not review or review.get("_dry_run"):
+        return []
+    issues = review.get("issues") or []
+
+    slide = flow.new_slide()
+    y = flow.y
+    add_section_bar(slide, y, "Gemini 교차검수 결과 (내부 참고용)")
+    y += Inches(0.55)
+    slides = [slide]
+
+    if not issues:
+        add_text(slide, MARGIN, y, CONTENT_W, Inches(0.4),
+                  "✅ 검수 통과 — 왜곡/날조·저작권/표절·사실확인·비문/맞춤법 이슈가 "
+                  "발견되지 않았습니다.", size=12, align=PP_ALIGN.CENTER)
+        flow.y = y + Inches(0.4)
+        return slides
+
+    if review.get("summary"):
+        summary_h = estimate_text_height(review["summary"], 11, CONTENT_W)
+        add_text(slide, MARGIN, y, CONTENT_W, summary_h, review["summary"], size=11,
+                  color=MUTED_COLOR)
+        y += summary_h + Inches(0.2)
+
+    for issue in issues:
+        header_text = f"[{issue.get('category', '')} · {issue.get('severity', '')}] {issue.get('field', '')}"
+        header_h = estimate_text_height(header_text, 12, CONTENT_W, bold=True)
+        quote = issue.get("quote", "")
+        quote_h = estimate_text_height(quote, 10, CONTENT_W - Inches(0.2)) if quote else Inches(0)
+        explanation_h = estimate_text_height(issue.get("explanation", ""), 11, CONTENT_W)
+        block_h = header_h + Inches(0.05) \
+            + (quote_h + Inches(0.05) if quote else Inches(0)) \
+            + explanation_h + Inches(0.22)
+
+        if y + block_h > flow.bottom_limit:
+            slide = flow.new_slide()
+            y = flow.y
+            slides.append(slide)
+
+        add_text(slide, MARGIN, y, CONTENT_W, header_h, header_text, size=12, bold=True,
+                  color=ACCENT_COLOR)
+        y += header_h + Inches(0.05)
+        if quote:
+            add_text(slide, MARGIN + Inches(0.1), y, CONTENT_W - Inches(0.2), quote_h,
+                      f"“{quote}”", size=10, color=MUTED_COLOR)
+            y += quote_h + Inches(0.05)
+        add_text(slide, MARGIN, y, CONTENT_W, explanation_h, issue.get("explanation", ""), size=11)
+        y += explanation_h + Inches(0.22)
+
+    flow.y = y
+    return slides
+
+
+def build(content_json, out_path, review=None):
+    """content_json(정현지 스키마) -> 새 PPTX 파일 생성.
+    review(reviewer.review_content()의 반환값)를 넘기면 마지막에 검수 결과 페이지를
+    덧붙인다 — 넘기지 않으면(기본값 None) 예전과 동일하게 검수 페이지 없이 생성된다."""
     prs = Presentation()
     prs.slide_width = SLIDE_W
     prs.slide_height = SLIDE_H
@@ -739,5 +799,6 @@ def build(content_json, out_path):
     build_meal_slide(flow, content_json.get("meal_info"))
     build_safety_slide(flow, content_json.get("altitude_profile"), content_json.get("safety_note"))
     build_banner_request_slide(flow, cover, content_json.get("banner_copy"))
+    build_review_notes_slide(flow, review)
     prs.save(out_path)
     return prs
