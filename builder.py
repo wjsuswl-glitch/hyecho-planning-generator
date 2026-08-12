@@ -19,6 +19,10 @@ SLIDE_W = Emu(6858000)   # 원본 기획안과 동일한 슬라이드 크기 (�
 SLIDE_H = Emu(9906000)
 FONT_NAME = "맑은 고딕"
 ACCENT_COLOR = RGBColor(0x1B, 0x4D, 0x6B)   # 진한 티얼/네이비 (섹션 바, 강조)
+GROUP_BAR_COLOR = RGBColor(0x5C, 0x8A, 0x9E)  # ACCENT_COLOR보다 밝은 티얼. 방문지 그룹(상위
+                                                # 카테고리) 바에 쓴다 — 섹션 바(진한 색)보다
+                                                # 밝게 해서 "섹션 > 그룹 > 방문지" 위계가
+                                                # 색 대비로도 바로 보이게 한다.
 TEXT_COLOR = RGBColor(0x22, 0x22, 0x22)
 WHITE = RGBColor(0xFF, 0xFF, 0xFF)
 MUTED_COLOR = RGBColor(0x66, 0x66, 0x66)
@@ -84,6 +88,35 @@ def add_section_bar(slide, top, text, height=Inches(0.45), size=15):
     tf = bar.text_frame
     tf.vertical_anchor = MSO_ANCHOR.MIDDLE
     _tf_setup(tf, text, size, WHITE, bold=True, align=PP_ALIGN.CENTER)
+    return bar
+
+
+def group_bar_height(text, size=13):
+    """add_group_bar가 실제로 그릴 높이를 미리 계산한다 — 배치 전에 다음 요소와
+    겹치는지 판단하려면 그리기 전에 높이를 알아야 해서 별도 함수로 분리."""
+    return estimate_text_height(text, size, CONTENT_W - Inches(0.3), bold=True) + Inches(0.16)
+
+
+def add_group_bar(slide, top, text, height=None, size=13):
+    """방문지를 지역/테마로 묶을 때 쓰는 "상위 카테고리" 바. 예전엔 이 그룹명을
+    배경 없는 굵은 글씨 한 줄로만 표시했는데, 그러면 카테고리라기보다 방문지
+    항목 하나처럼 보여서 위계가 안 느껴진다는 피드백이 있었다(멕시코 문명기행
+    재테스트) — "카라코람 트레킹 하이라이트", "함께 즐기는 관광 코스" 같은
+    섹션 바(add_section_bar)와 같은 배경색 바 형태로 통일하되, 섹션 바보다
+    밝은 GROUP_BAR_COLOR를 써서 섹션(진한 색) 아래 놓인 하위 카테고리라는
+    걸 색으로도 구분한다. 왼쪽 정렬 + 들여쓰기로 섹션 바(가운데 정렬)와도
+    구분한다."""
+    if height is None:
+        height = group_bar_height(text, size)
+    bar = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, MARGIN, top, CONTENT_W, height)
+    bar.fill.solid()
+    bar.fill.fore_color.rgb = GROUP_BAR_COLOR
+    bar.line.fill.background()
+    tf = bar.text_frame
+    tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+    tf.margin_left = Inches(0.15)
+    tf.margin_right = Inches(0.15)
+    _tf_setup(tf, text, size, WHITE, bold=True, align=PP_ALIGN.LEFT)
     return bar
 
 
@@ -205,7 +238,18 @@ def build_destination_slides(flow, destinations, section_title=None, theme_line=
     태그만 붙을 뿐 "묶어서 보여주는" 느낌은 아니었다. 사업부 자료에 이미 있는 그룹
     구조(예: "[ 사포테카 문명 | 와하카 ]")를 살려 지역/테마별로 소제목 아래 방문지를
     들여쓰기해서 묶어 보여주도록 다시 짰다 — region_tag가 없는 방문지는 예전처럼
-    그룹 소제목 없이 그냥 나열된다(하위 호환)."""
+    그룹 소제목 없이 그냥 나열된다(하위 호환).
+
+    그 다음 라운드에서 그룹명을 작은 굵은 글씨(add_text)로만 표시했더니, 이번엔
+    글씨는 잘 보이지만 "상위 카테고리"라는 느낌이 안 나고 방문지 제목과 비슷한
+    무게로 읽힌다는 피드백을 받았다(멕시코 재확인 — "그룹핑한 방문지의 상위
+    카테고리가 있어야 해", "카라코람 트레킹 하이라이트"/"함께 즐기는 관광 코스"
+    같은 섹션 바 스타일 참고 요청). 그래서 그룹명도 section_title과 같은
+    "색 배경 바" 형태(add_group_bar)로 승격했다 — 다만 section_title(섹션 전체를
+    가르는 최상위 구분, 예: 트레킹/관광 코스)보다는 한 단계 아래라는 걸 보여주기
+    위해 더 밝은 색(GROUP_BAR_COLOR)과 왼쪽 정렬을 쓴다. 즉 위계는
+    section_title(진한 색, 가운데 정렬) > region_tag 그룹 바(밝은 색, 좌측 정렬)
+    > 개별 방문지 순."""
     if not destinations:
         return []
     slides = []
@@ -233,10 +277,9 @@ def build_destination_slides(flow, destinations, section_title=None, theme_line=
             # 그룹이 슬라이드 경계를 넘어 이어지면, 새 슬라이드 맨 위에서도 그룹명을
             # 다시 보여준다 — 안 그러면 방문지가 갑자기 그룹 없이 나온 것처럼 보인다.
             if current_group:
-                label_h = estimate_text_height(current_group, 13, CONTENT_W, bold=True)
-                add_text(slide, MARGIN, y, CONTENT_W, label_h, current_group, size=13,
-                          bold=True, color=ACCENT_COLOR)
-                y += label_h + Inches(0.15)
+                bar_h = group_bar_height(current_group)
+                add_group_bar(slide, y, current_group, height=bar_h)
+                y += bar_h + Inches(0.15)
 
         indent = Inches(0.15)  # 그룹에 속한 방문지는 소제목 아래 있다는 느낌을 주기 위해 살짝 들여씀
         placed_any = False
@@ -250,7 +293,7 @@ def build_destination_slides(flow, destinations, section_title=None, theme_line=
             desc_h = estimate_text_height(dest.get("description", ""), 12, title_w)
             group_label_h = Inches(0)
             if is_new_group:
-                group_label_h = estimate_text_height(group, 13, CONTENT_W, bold=True) + Inches(0.15)
+                group_label_h = group_bar_height(group) + Inches(0.15)
             block_h = group_label_h + title_h + Inches(0.06) + image_h + Inches(0.1) \
                 + desc_h + Inches(0.18)
 
@@ -258,9 +301,8 @@ def build_destination_slides(flow, destinations, section_title=None, theme_line=
                 break  # 이 슬라이드엔 더 안 들어감 -> 다음 슬라이드로
 
             if is_new_group:
-                label_h = group_label_h - Inches(0.15)
-                add_text(slide, MARGIN, y, CONTENT_W, label_h, group, size=13,
-                          bold=True, color=ACCENT_COLOR)
+                bar_h = group_label_h - Inches(0.15)
+                add_group_bar(slide, y, group, height=bar_h)
                 y += group_label_h
                 current_group = group
 
