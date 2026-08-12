@@ -105,7 +105,7 @@ def generate_content(system_prompt, image_blocks=None, dry_run=False, enable_web
                     pass
         return None, joined_text
 
-    def _is_substantive(result):
+    def _is_single_substantive(result):
         """cover.tagline/product_name처럼 항상 채워져야 하는 핵심 필드가 실제로
         차 있는지 확인한다. JSON 파싱 자체는 성공했지만 속이 빈 뼈대(예: 검색·서술문
         문제로 급하게 마무리하며 {}에 가까운 결과를 낸 경우)를 성공으로 잘못
@@ -121,6 +121,21 @@ def generate_content(system_prompt, image_blocks=None, dry_run=False, enable_web
         product_name = cover.get("product_name") or ""
         tagline = cover.get("tagline") or ""
         return bool(product_name.strip()) and bool(tagline.strip())
+
+    def _is_substantive(result):
+        """일반 상품(스키마 객체 하나)은 _is_single_substantive를 그대로 쓴다.
+        사업부 자료가 "봄/가을 2개 버전" 같은 다중 버전을 명시적으로 요청한 경우엔
+        {"multi_version": true, "versions": [...]} 형태로 응답이 온다 — 이때는 껍데기
+        자체엔 cover가 없으므로, 감싸인 각 버전(스키마 객체) 전부가 substantive해야만
+        전체를 substantive로 인정한다(한 버전이라도 비어있으면 재요청 대상)."""
+        if not isinstance(result, dict):
+            return False
+        if result.get("multi_version"):
+            versions = result.get("versions")
+            if not isinstance(versions, list) or not versions:
+                return False
+            return all(_is_single_substantive(v) for v in versions)
+        return _is_single_substantive(result)
 
     joined_text = ""
     empty_skeleton = False  # JSON은 찾았지만 cover.product_name 등 핵심 필드가 빈 경우
