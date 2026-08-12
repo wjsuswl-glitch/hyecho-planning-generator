@@ -899,5 +899,368 @@
       "Nepal",
       "Himalaya"
     ]
+  },
+  "최정인": {
+    "template": "templates/안데스_템플릿.pptx",
+    "field_map": {
+      "cover.tagline": [
+        0,
+        5
+      ],
+      "cover.product_name": [
+        0,
+        6
+      ],
+      "cover.region_tag": [
+        0,
+        7
+      ],
+      "cover.subtitle": [
+        0,
+        9
+      ],
+      "cover.intro_copy": [
+        0,
+        10
+      ],
+      "brand_tagline": [
+        0,
+        32
+      ],
+      "brand_points.0": [
+        0,
+        40
+      ],
+      "brand_points.1": [
+        0,
+        43
+      ],
+      "watermark_label": [
+        0,
+        50
+      ],
+      "why_hyecho.title": [
+        1,
+        8
+      ],
+      "why_hyecho.subtitle1": [
+        1,
+        9
+      ],
+      "why_hyecho.subtitle2": [
+        1,
+        10
+      ],
+      "why_hyecho.badge": [
+        1,
+        13
+      ],
+      "why_hyecho.section_title": [
+        1,
+        17
+      ],
+      "why_hyecho.theme_line": [
+        1,
+        20
+      ],
+      "season.title": [
+        3,
+        25
+      ],
+      "season.content": [
+        3,
+        29
+      ],
+      "map_note": [
+        0,
+        23
+      ],
+      "theme_categories.0.label": [
+        1,
+        27
+      ],
+      "theme_categories.1.label": [
+        1,
+        28
+      ],
+      "theme_categories.2.label": [
+        1,
+        29
+      ],
+      "theme_categories.0.bullets": [
+        1,
+        31
+      ],
+      "theme_categories.1.bullets": [
+        1,
+        32
+      ],
+      "theme_categories.2.bullets": [
+        1,
+        33
+      ],
+      "food_theme.title": [
+        1,
+        34
+      ],
+      "food_theme.description": [
+        1,
+        35
+      ],
+      "section_summary": [
+        1,
+        45
+      ],
+      "theme_categories_intro": [
+        1,
+        30
+      ],
+      "season.stat_line": [
+        3,
+        28
+      ]
+    },
+    "repeatable_groups": {
+      "destinations": {
+        "slots": [
+          {
+            "fields": {
+              "title": [
+                1,
+                50
+              ],
+              "description": [
+                2,
+                4
+              ],
+              "region_tag": [
+                1,
+                49
+              ]
+            }
+          },
+          {
+            "fields": {
+              "title": [
+                2,
+                5
+              ],
+              "description": [
+                2,
+                10
+              ]
+            }
+          },
+          {
+            "fields": {
+              "title": [
+                2,
+                15
+              ],
+              "description": [
+                2,
+                16
+              ],
+              "region_tag": [
+                2,
+                11
+              ]
+            },
+            "extra_shapes": [
+              [
+                2,
+                17
+              ],
+              [
+                2,
+                18
+              ]
+            ]
+          },
+          {
+            "fields": {
+              "title": [
+                2,
+                19
+              ],
+              "description": [
+                2,
+                20
+              ]
+            },
+            "extra_shapes": [
+              [
+                2,
+                21
+              ],
+              [
+                2,
+                24
+              ]
+            ]
+          },
+          {
+            "fields": {
+              "title": [
+                2,
+                25
+              ],
+              "description": [
+                2,
+                27
+              ]
+            }
+          },
+          {
+            "fields": {
+              "title": [
+                3,
+                10
+              ],
+              "description": [
+                3,
+                12
+              ],
+              "region_tag": [
+                3,
+                13
+              ]
+            },
+            "extra_shapes": [
+              [
+                3,
+                9
+              ]
+            ]
+          },
+          {
+            "fields": {
+              "title": [
+                3,
+                18
+              ],
+              "description": [
+                3,
+                19
+              ]
+            },
+            "extra_shapes": [
+              [
+                3,
+                17
+              ]
+            ]
+          },
+          {
+            "fields": {
+              "title": [
+                3,
+                21
+              ],
+              "description": [
+                3,
+                22
+              ]
+            },
+            "extra_shapes": [
+              [
+                3,
+                20
+              ]
+            ]
+          }
+        ]
+      },
+      "map_stops": {
+        "slots": [
+          {
+            "shape": [
+              0,
+              13
+            ]
+          },
+          {
+            "shape": [
+              0,
+              14
+            ]
+          },
+          {
+            "shape": [
+              0,
+              15
+            ]
+          },
+          {
+            "shape": [
+              0,
+              16
+            ]
+          },
+          {
+            "shape": [
+              0,
+              17
+            ]
+          },
+          {
+            "shape": [
+              0,
+              18
+            ]
+          },
+          {
+            "shape": [
+              0,
+              19
+            ]
+          },
+          {
+            "shape": [
+              0,
+              20
+            ]
+          },
+          {
+            "shape": [
+              0,
+              21
+            ]
+          },
+          {
+            "shape": [
+              0,
+              22
+            ]
+          }
+        ]
+      }
+    },
+    "leak_check_terms": [
+      "안데스",
+      "페루",
+      "볼리비아",
+      "칠레",
+      "마추픽추",
+      "쿠스코",
+      "라파즈",
+      "우유니",
+      "아타카마",
+      "산티아고",
+      "아레키파",
+      "리마",
+      "푸노",
+      "라키신전",
+      "코리칸차",
+      "티티카카",
+      "우로스",
+      "잉카",
+      "케추아",
+      "Andes",
+      "남미",
+      "South America",
+      "안데스산맥",
+      "중앙 안데스"
+    ]
   }
 }
