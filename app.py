@@ -159,15 +159,20 @@ if uploaded_files and st.button("생성하기", type="primary"):
                                 f"{issue.get('explanation')}"
                             )
                 else:
-                    st.info(f"✅ Gemini 검수 통과{tag} — 왜곡/표절/사실확인 이슈가 발견되지 않았습니다.")
+                    st.info(f"✅ Gemini 검수 통과{tag} — 왜곡/날조·저작권/표절·사실확인·비문/맞춤법 "
+                            f"이슈가 발견되지 않았습니다.")
 
             try:
                 with st.spinner(f"PPTX 조립 중...{tag}"):
                     path_suffix = f"_{version_label}" if version_label else ""
                     out_path = primary_path.replace(".docx", f"{path_suffix}_결과.pptx")
                     if writer_style in ("정현지", "박소설", "신윤정"):
-                        # v2: 옛 기획안을 열어 덮어쓰지 않고, 매번 새로 슬라이드를 생성
-                        dynamic_builder.build(version_content, out_path)
+                        # v2: 옛 기획안을 열어 덮어쓰지 않고, 매번 새로 슬라이드를 생성.
+                        # review도 같이 넘겨서 검수 결과가 PPTX 마지막 페이지에도 남게
+                        # 한다 — 예전엔 이 화면(Streamlit)에만 표시되고 다운로드한
+                        # 파일에는 안 남아서, 파일만 넘기면 검수 내역이 사라지는
+                        # 문제가 있었다.
+                        dynamic_builder.build(version_content, out_path, review=review)
                         log = [("dynamic_build", "OK — 새 슬라이드로 생성됨 (템플릿 재사용 없음)")]
                     else:
                         log = assemble(version_content, writer_style, TEMPLATE_MAP_PATH, out_path)
