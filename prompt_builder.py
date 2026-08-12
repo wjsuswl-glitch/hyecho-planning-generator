@@ -203,6 +203,20 @@ def load_fewshot_examples(writer_style, category, k=3):
     return picked
 
 def build_system_prompt(writer_style, category, parsed_sections, format_info, has_images=False):
+    # load_fewshot_examples는 내부적으로 _nfc()로 정규화해서 비교하지만, 그건 그
+    # 함수 안에서만 쓰이는 로컬 변수라 여기 build_system_prompt의 writer_style
+    # 자체는 정규화되지 않은 채로 남아있었다 — 그 결과 STYLE_RULES[writer_style]처럼
+    # 바로 아래에서 하는 딕셔너리 조회는 그대로 원본 인코딩을 써서, Streamlit
+    # 화면의 selectbox에서 넘어온 문자열이 자모 분리형(NFD)이면(예: 맥OS 환경에서
+    # 저장된 template_map.json의 키가 NFD인 경우) 여기 파일에 NFC로 적힌 키와
+    # 안 맞아 KeyError가 났다("최정인" 추가 후 실제로 발생 — 화면엔 똑같이
+    # "최정인"으로 보여도 바이트 단위로는 다른 문자열이라 딕셔너리 조회가 실패함).
+    # 함수 맨 앞에서 한 번 정규화해두면 이 함수 안의 모든 딕셔너리 조회
+    # (STYLE_RULES/LAYOUT_HINT/BANNER_MAP_INCLUDE/SCHEMA_HINTS)와 f-string
+    # 삽입까지 전부 안전해진다.
+    writer_style = _nfc(writer_style)
+    category = _nfc(category)
+
     examples = load_fewshot_examples(writer_style, category)
     draft_copy = format_info.get("draft_copy")
 
