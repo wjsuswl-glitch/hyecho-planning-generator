@@ -124,84 +124,114 @@ if uploaded_files and st.button("생성하기", type="primary"):
             st.stop()
 
         st.success("생성 완료!")
-        with st.expander("생성된 JSON 보기"):
-            st.json(content)
 
-        try:
-            with st.spinner("Gemini로 검수 중... (왜곡/표절/사실확인)"):
-                source_material_text = "\n\n".join(
-                    f"[{k}]\n{v}" for k, v in sections.items()
-                )
-                review = review_content(content, source_material_text)
-        except Exception as e:
-            st.warning(f"검수 중 오류가 발생해 이 단계는 건너뜁니다:\n\n{e}")
-            review = {"issues": [], "summary": ""}
-
-        if review.get("_dry_run"):
-            st.info(f"ℹ️ {review['_note']}")
-        else:
-            issues = review.get("issues", [])
-            if issues:
-                st.warning(f"⚠️ Gemini 검수에서 {len(issues)}건이 발견됐습니다 — 확인이 필요합니다.")
-                with st.expander(f"🔎 검수 상세 내역 ({len(issues)}건)", expanded=True):
-                    if review.get("summary"):
-                        st.text(review["summary"])
-                    for issue in issues:
-                        st.markdown(
-                            f"**[{issue.get('category')} · {issue.get('severity')}] "
-                            f"{issue.get('field')}**\n\n"
-                            f"> {issue.get('quote')}\n\n"
-                            f"{issue.get('explanation')}"
-                        )
-            else:
-                st.info("✅ Gemini 검수 통과 — 왜곡/표절/사실확인 이슈가 발견되지 않았습니다.")
-
-        try:
-            with st.spinner("PPTX 조립 중..."):
-                out_path = primary_path.replace(".docx", "_결과.pptx")
-                if writer_style in ("정현지", "박소설", "신윤정"):
-                    # v2: 옛 기획안을 열어 덮어쓰지 않고, 매번 새로 슬라이드를 생성
-                    dynamic_builder.build(content, out_path)
-                    log = [("dynamic_build", "OK — 새 슬라이드로 생성됨 (템플릿 재사용 없음)")]
-                else:
-                    log = assemble(content, writer_style, TEMPLATE_MAP_PATH, out_path)
-        except Exception as e:
-            st.error(f"PPTX 조립 중 오류가 발생했습니다:\n\n{e}")
-            st.stop()
-
-        ok_count = sum(1 for _, r in log if r == "OK")
-        leak_entries = [(k, v) for k, v in log if "LEAK CHECK" in k]
-
-        st.success(f"PPTX 조립 완료! ({ok_count}/{len(log)} 필드 반영)")
-
-        if leak_entries:
-            st.warning(
-                f"⚠️ 아직 매핑되지 않아 이전 템플릿 원본 내용이 남아있는 도형이 "
-                f"{len(leak_entries)}개 있습니다. 다운로드한 파일에서 해당 부분은 "
-                f"직접 확인/수정이 필요합니다."
-            )
-            with st.expander(f"⚠️ 누수 상세 내역 ({len(leak_entries)}건)", expanded=True):
-                for k, v in leak_entries:
-                    st.text(f"{k}\n  → {v}")
-        else:
-            st.info("✅ 누수 검사 통과 — 이전 템플릿 원본 내용이 남아있는 도형이 없습니다.")
-
-        with st.expander("조립 로그 전체 보기 (필드별 반영 결과)"):
-            for k, v in log:
-                st.text(f"{k} -> {v}")
-
-        # 파일명을 기획자명_카테고리 대신 실제 상품명으로 — 여러 개 만들 때 구분되도록
-        product_name = (
-            content.get("cover", {}).get("product_name")
-            or content.get("cover", {}).get("headline")
-            or f"{writer_style}_{category}"
+        source_material_text = "\n\n".join(
+            f"[{k}]\n{v}" for k, v in sections.items()
         )
-        safe_name = "".join(
-            c for c in str(product_name) if c not in '\\/:*?"<>|\n'
-        ).strip()[:60] or f"{writer_style}_{category}"
 
-        with open(out_path, "rb") as f:
-            st.download_button("📥 PPTX 다운로드", f, file_name=f"{safe_name}_기획안.pptx")
+        def _process_version(version_content, version_label=None):
+            """검수 → PPTX 조립 → 다운로드 버튼까지, 콘텐츠 한 벌(=한 버전)에 대해
+            수행한다. 단일 버전 상품은 이 함수를 한 번만 부르고, "봄/가을 2개 버전"처럼
+            사업부 자료가 다중 버전을 명시적으로 요청한 상품은 버전마다 한 번씩 부른다."""
+            tag = f" — {version_label}" if version_label else ""
+
+            try:
+                with st.spinner(f"Gemini로 검수 중...{tag} (왜곡/표절/사실확인)"):
+                    review = review_content(version_content, source_material_text)
+            except Exception as e:
+                st.warning(f"검수 중 오류가 발생해 이 단계는 건너뜁니다{tag}:\n\n{e}")
+                review = {"issues": [], "summary": ""}
+
+            if review.get("_dry_run"):
+                st.info(f"ℹ️ {review['_note']}")
+            else:
+                issues = review.get("issues", [])
+                if issues:
+                    st.warning(f"⚠️ Gemini 검수에서{tag} {len(issues)}건이 발견됐습니다 — 확인이 필요합니다.")
+                    with st.expander(f"🔎 검수 상세 내역{tag} ({len(issues)}건)", expanded=True):
+                        if review.get("summary"):
+                            st.text(review["summary"])
+                        for issue in issues:
+                            st.markdown(
+                                f"**[{issue.get('category')} · {issue.get('severity')}] "
+                                f"{issue.get('field')}**\n\n"
+                                f"> {issue.get('quote')}\n\n"
+                                f"{issue.get('explanation')}"
+                            )
+                else:
+                    st.info(f"✅ Gemini 검수 통과{tag} — 왜곡/표절/사실확인 이슈가 발견되지 않았습니다.")
+
+            try:
+                with st.spinner(f"PPTX 조립 중...{tag}"):
+                    path_suffix = f"_{version_label}" if version_label else ""
+                    out_path = primary_path.replace(".docx", f"{path_suffix}_결과.pptx")
+                    if writer_style in ("정현지", "박소설", "신윤정"):
+                        # v2: 옛 기획안을 열어 덮어쓰지 않고, 매번 새로 슬라이드를 생성
+                        dynamic_builder.build(version_content, out_path)
+                        log = [("dynamic_build", "OK — 새 슬라이드로 생성됨 (템플릿 재사용 없음)")]
+                    else:
+                        log = assemble(version_content, writer_style, TEMPLATE_MAP_PATH, out_path)
+            except Exception as e:
+                st.error(f"PPTX 조립 중 오류가 발생했습니다{tag}:\n\n{e}")
+                st.stop()
+
+            ok_count = sum(1 for _, r in log if r == "OK")
+            leak_entries = [(k, v) for k, v in log if "LEAK CHECK" in k]
+
+            st.success(f"PPTX 조립 완료!{tag} ({ok_count}/{len(log)} 필드 반영)")
+
+            if leak_entries:
+                st.warning(
+                    f"⚠️ 아직 매핑되지 않아 이전 템플릿 원본 내용이 남아있는 도형이{tag} "
+                    f"{len(leak_entries)}개 있습니다. 다운로드한 파일에서 해당 부분은 "
+                    f"직접 확인/수정이 필요합니다."
+                )
+                with st.expander(f"⚠️ 누수 상세 내역{tag} ({len(leak_entries)}건)", expanded=True):
+                    for k, v in leak_entries:
+                        st.text(f"{k}\n  → {v}")
+            else:
+                st.info(f"✅ 누수 검사 통과{tag} — 이전 템플릿 원본 내용이 남아있는 도형이 없습니다.")
+
+            with st.expander(f"조립 로그 전체 보기{tag} (필드별 반영 결과)"):
+                for k, v in log:
+                    st.text(f"{k} -> {v}")
+
+            # 파일명을 기획자명_카테고리 대신 실제 상품명으로 — 여러 개 만들 때 구분되도록
+            product_name = (
+                version_content.get("cover", {}).get("product_name")
+                or version_content.get("cover", {}).get("headline")
+                or f"{writer_style}_{category}"
+            )
+            safe_name = "".join(
+                c for c in str(product_name) if c not in '\\/:*?"<>|\n'
+            ).strip()[:60] or f"{writer_style}_{category}"
+            name_suffix = f"_{version_label}" if version_label else ""
+
+            with open(out_path, "rb") as f:
+                st.download_button(
+                    f"📥 PPTX 다운로드{tag}", f,
+                    file_name=f"{safe_name}{name_suffix}_기획안.pptx",
+                    key=f"download_{version_label or 'single'}",
+                )
+
+        # multi_version: 사업부 자료가 "봄 버전과 가을 버전으로 2개" 처럼 결과물 자체를
+        # 여러 개로 나눠달라고 명시적으로 요청한 경우에만 온다(prompt_builder.py
+        # [버전 분기 판단] 참고) — 카라코람 테스트에서 이런 요청이 있었는데도 결과물이
+        # 봄 버전 하나만 나온 문제를 고치기 위해 추가됨. 대부분의 상품은 이 분기를
+        # 타지 않고 바로 else로 간다.
+        if content.get("multi_version") and isinstance(content.get("versions"), list) and content["versions"]:
+            versions = content["versions"]
+            st.info(f"ℹ️ 사업부 자료에 여러 버전 제작 요청이 있어 {len(versions)}개 버전으로 나눠 생성했습니다.")
+            with st.expander("생성된 JSON 보기 (버전 전체)"):
+                st.json(content)
+            for version in versions:
+                version_label = version.get("version_label") or ""
+                st.markdown(f"#### {version_label} 버전" if version_label else "#### 버전")
+                _process_version(version, version_label)
+        else:
+            with st.expander("생성된 JSON 보기"):
+                st.json(content)
+            _process_version(content, None)
 
     for p in tmp_paths:
         try:
