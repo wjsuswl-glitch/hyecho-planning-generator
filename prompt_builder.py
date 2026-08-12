@@ -1,320 +1,855 @@
-"""few-shot 예시 선택 + 시스템 프롬프트 조립 모듈"""
-import json
-import unicodedata
+"""동적 PPTX 빌더 (v2) — 기존 완성 기획안을 열어서 도형을 덮어쓰는 대신,
+매번 필요한 만큼만 슬라이드를 새로 만든다.
 
-import os
-FEWSHOT_PATH = os.path.join(os.path.dirname(__file__), "data", "fewshot_examples.json")
-
-
-def _nfc(s):
-    """macOS 등에서 NFD(자모 분리형)로 저장된 한글 문자열을
-    NFC(완성형)로 정규화. JSON 파일의 값과 코드 내 문자열 리터럴의
-    유니코드 정규화 형식이 다르면 '정현지' == '정현지' 비교가 실패한다."""
-    return unicodedata.normalize("NFC", s) if isinstance(s, str) else s
-
-STYLE_RULES = {
-    "박소설": "문학적·서정적 문체, 형용사와 비유를 적극 활용.",
-    "신윤정": "정보 밀도 높은 구조적 문체, 넘버링 카드(특별함 N가지)와 비교표를 활용.",
-    "정현지": "함축적·담백한 문체. 표지는 2줄 대구 형태 태그라인. 3~5장으로 압축.",
-    # 실제 제작한 상품소개/기획전 기획안 4건(인도 건축기행, 귀주성 트레킹, 제주도
-    # 춘하추동, 설국열차 이벤트)의 어투를 분석해 도출 — 체험(직접·온몸으로) 중심의
-    # 생동감 있는 문체가 핵심. "\"...\"" 인용구로 후킹 문구를 열고, 계절/테마명은
-    # 한자를 병기하며(예: [봄 春]), ①②③ 원문자 번호로 소주제를 구분한다. "~해
-    # 보세요!" 같은 강한 청유형 CTA로 문단을 자주 마무리하고, "세계 최대", "국내
-    # 유일", "아시아 최대" 같은 최상급 비교 표현을 적극 활용한다. 대표이사·임원
-    # 답사처럼 신뢰를 줄 수 있는 구체적 근거(실명, 직접 답사 등)가 사업부 자료에
-    # 있으면 놓치지 말고 살려서 쓴다.
-    "최정인": (
-        "체험 중심의 생동감 있는 문체 — '직접', '온몸으로', '걸으며' 등 몸으로 겪는 "
-        "표현을 즐겨 쓴다. \"...\" 인용구로 감성적인 후킹 문구를 열고, ①②③ 같은 "
-        "원문자 번호로 소주제를 나눈다. 계절/테마명에는 한자를 병기할 수 있다(예: "
-        "\"[봄 春] 유채꽃과 생명의 숨결\"). 문단은 종종 '~해 보세요!' 같은 강한 "
-        "청유형 CTA로 마무리한다. '세계 최대', '국내 유일', '아시아 최대'처럼 "
-        "확인 가능한 최상급 비교 표현을 적극 활용해 상품의 규모/희소성을 강조한다."
-    ),
-}
-
-LAYOUT_HINT = {"박소설": "separate", "신윤정": "combined", "정현지": "separate", "최정인": "separate"}
-BANNER_MAP_INCLUDE = {"박소설": True, "신윤정": True, "정현지": False, "최정인": True}
-
-# template_map.json의 field_map / repeatable_groups와 1:1로 맞춘 스키마.
-# 여기가 template_map.json과 어긋나면 assembler.py에서 "NO DATA"만 계속 쌓인다 —
-# 필드를 추가/삭제할 땐 반드시 template_map.json도 같이 바꿀 것.
-SCHEMA_HINTS = {
-    "정현지": """{
-  "cover": {"tagline": str, "product_name": str, "region_tag": str, "subtitle": str, "intro_copy": str},
-  "watermark_label": str,
-  "product_variant_type": str,
-  "background_story": {"title": str, "content": str},
-  "why_reasons": [ {"title": str, "content": str} ],
-  "destinations_heading": str,
-  "destinations": [ {"title": str, "description": str, "region_tag": str} ],
-  "tour_spots_heading": str,
-  "tour_spots": [ {"title": str, "description": str, "region_tag": str} ],
-  "route_compare": {
-    "title": str,
-    "routes": [ {"name": str, "course": str, "scenery": str, "appeal": str, "summary": str} ]
-  },
-  "transport_spec": {"title": str, "specs": [ {"label": str, "value": str} ]},
-  "brand_tagline": str,
-  "experience_points": [ {"title": str, "description": str} ],
-  "guide_profile": [ {"name": str, "title": str, "bio": str} ],
-  "season": {"title": str, "content": str, "stat_line": str},
-  "season_table": [ {"month": str, "high": str, "low": str} ],
-  "meal_info": {"question": str, "answer": str},
-  "altitude_profile": [ {"name": str, "altitude": str, "distance": str, "duration": str, "highlight": str} ],
-  "safety_note": {"question": str, "answer": str},
-  "banner_copy": {"kicker": str, "title": str}
-}
-※ cover.tagline: 표지 맨 위에 작게 들어가는 짧은 감성 문구 (2줄 이내, 꾸미는 말)
-※ cover.region_tag: 여러 국가·지역을 넘나드는 상품일 때만 그 범위를 짚어주는 상위
-  지역명(예: "남미 5개국 완전일주"라면 "남아메리카")을 채우세요. 단일 국가/지역만
-  방문하는 상품이면 반드시 빈 문자열로 두세요 — product_name에 이미 그 나라/지역명이
-  들어가는 경우가 많아(예: "멕시코 문명기행 13일") 표지에 같은 지명이 또 한 번
-  나오면 불필요한 중복입니다.
-※ cover.product_name: 실제 상품명입니다. 여행지·노선·기간처럼 고객이 실제로 궁금해하는
-  핵심 정보만 자연스러운 하나의 문장/구로 담으세요 (예: "사천에서 티벳까지 천장공로 12일").
-  대괄호는 절대 쓰지 마세요. 사업부 자료 제목의 대괄호 태그는 다음 두 종류를 구분해서
-  처리하세요:
-  1) "이지트레킹", "프리미엄", "특가", "얼리버드" 같은 내부 상품군/난이도/캠페인 분류
-     태그는 고객에게 의미 없는 내부 라벨이므로 product_name에서 완전히 제외하세요
-     (product_variant_type 필드로 이미 별도 반영됩니다).
-  2) "차마고도 3편", "감탄절로"처럼 시리즈명·캠페인명 등 실제 마케팅 정보인 태그는
-     product_name 앞에 붙이지 말고 cover.tagline(표지 맨 위 감성 문구)에 자연스럽게
-     녹여내거나, tagline에도 안 맞으면 과감히 생략하세요.
-  이 필드가 표지의 메인 타이틀(가장 큰 글씨)과 배너 슬라이드에 그대로 노출되므로, 절대
-  비워두거나 다른 감성 문구로 대체하지 마세요.
-※ cover.subtitle: 이미지 아래에 들어가는 보조 설명 한 줄입니다. 반드시 여행객이 읽을
-  마케팅 카피여야 합니다 (예: "사천에서 티벳까지, 2,140km 고원의 서사"). 이 문서 자체를
-  설명하는 메타 문구("상품 소개 기획안", "디자인팀 전달용", "기획안입니다" 등)는 절대
-  쓰지 마세요 — 그런 문구는 실제 고객이 보는 화면에 그대로 노출되는 심각한 오류입니다.
-※ watermark_label: 표지 우상단에 작게 들어가는 영문 1~2단어 (여정/지역명)
-※ product_variant_type: 상품의 이동수단/난이도 성격 태그입니다. "육상"(일반 도보·차량
-  이동 여정), "크루즈"(선박이 핵심 이동수단), "고소·극한등반"(6,000m급 이상이거나 신청
-  자격 제한이 있는 등반) 중 사업부 자료 내용에 맞는 하나를 고르세요. 애매하면 "육상"으로
-  두세요.
-※ background_story: 여행지/노선의 배경·역사·유래를 설명하는 섹션입니다. title(임팩트 있는
-  헤드라인, 예: "세계의 지붕을 잇는, 실크로드의 마지막 길")과 content(설명 문단)만
-  작성하세요. "OOO란?" 같은 형식적인 소제목(kicker)은 모든 상품 기획안에 기계적으로
-  반복되는 상투적 표현이라 절대 만들지 마세요 — title로 바로 임팩트 있게 시작하세요.
-  사업부 자료에 이런 배경 설명이 없으면 웹 검색 도구로 사실을 확인한 뒤 채우세요
-  (연도, 유래, 지리적 사실 등 구체적 정보일수록 검색으로 확인하고, 지어내지 마세요).
-  검색 결과가 서로 다르거나 확인이 안 되는 세부사항은 그 부분만 빼고 확실한 내용만
-  쓰세요. 검색으로도 못 찾으면 잘 알려진 일반 상식 수준에서만 채우세요.
-※ why_reasons: "이 상품만의 차별점"을 설명하는 이유 목록입니다 (2~4개). 반드시 장소·코스·
-  풍광·일정·계절 한정성처럼 이 상품 고유의 요소만 다루세요 (예: "1년에 단 두 번만 열리는
-  계절", "타사가 가지 않는 숨은 트레킹 코스", "국내 유일의 노선"). "No 쇼핑/No 옵션",
-  "전 일정 인솔자 동행", 항공/호텔/이동수단처럼 상품과 무관하게 항상 제공되는 혜초 공통
-  서비스 요소는 여기 쓰지 마세요 — 그건 experience_points의 역할입니다. 타사 대비 명확한
-  차별점(유일 노선 등)이 사업부 자료에 있다면 "~와는 다릅니다", "비교해보면 답은 혜초"
-  같은 직접적인 비교 어조도 자연스럽게 쓸 수 있습니다 — 다만 실제로 비교할 근거가 있을
-  때만 이 톤을 쓰세요.
-※ destinations: 위 예시는 배열 안에 원소 1개만 보여준 것입니다. 실제로는
-  {"title": str, "description": str, "region_tag": str} 형태의 원소를 실제 입력에 있는 개수만큼
-  반복하세요. region_tag는 그 목적지가 속한 지역/국가/성(省) 이름이며, 없으면 빈 문자열로 두세요.
-  사업부 자료에 없는 지명을 지어내진 마세요. description은 2~3문장 이내로 간결하게 쓰세요
-  (너무 길면 레이아웃이 깨집니다). 사업부 자료가 "트레킹"과 "관광"처럼 코스 성격을 구분해
-  놓았다면(트레킹 상품 중 일부는 트레킹 코스와 시내/유적지 관광 코스가 함께 있습니다),
-  destinations에는 트레킹·액티비티 코스만 담고, 관광지·박물관·도시 방문처럼 걷거나 체험하는
-  트레킹이 아닌 코스는 아래 tour_spots로 분리하세요. 자료에 이런 구분이 없는 일반 상품
-  (트레킹이 아니거나, 방문지 전체가 같은 성격인 상품)이면 tour_spots는 비워두고 destinations
-  하나에 전부 담으세요.
-※ tour_spots_heading, tour_spots: destinations와 형태는 동일하지만
-  ("title": str, "description": str, "region_tag": str}), 트레킹 코스가 아닌 관광지(도시,
-  유적지, 박물관 등)만 담는 별도 섹션입니다. 트레킹 코스와 관광 코스가 모두 있는 상품에서만
-  채우고, tour_spots_heading도 그때만 채우세요(예: "함께 즐기는 관광 코스"). 해당 없으면
-  tour_spots_heading은 빈 문자열, tour_spots는 빈 배열로 두세요.
-※ route_compare: 사업부 자료에 대안 코스/노선 비교 내용이 있을 때만 채우세요. 없으면
-  routes를 빈 배열로 두세요 (있지도 않은 대안 코스를 지어내지 마세요).
-※ transport_spec: 열차·크루즈처럼 이동수단 자체가 상품의 핵심 매력인 경우에만 채우세요
-  (예: "The Ghan 럭셔리 열차", "모션 알바트로스 크루즈"). specs는 객실타입/부대시설/톤수/
-  안전등급처럼 사업부 자료에 실제로 있는 스펙만 담으세요. 일반적인 항공/버스 이동에는
-  채우지 말고 title을 빈 문자열, specs를 빈 배열로 두세요.
-※ destinations_heading: 목적지 소개 섹션의 제목입니다 (예: "OOO 하이라이트"). brand_tagline과는
-  다른 문구로 작성하세요 (같은 말 반복 금지).
-※ experience_points: "혜초와 함께라면 편안한 이유" — 상품과 무관하게 항상 제공되는 혜초
-  공통 서비스 차별점 카드 2~4개입니다. No 쇼핑/No 옵션, 전 일정 인솔자 동행, 항공/호텔
-  등급, 전용 이동수단(전용차량·전세버스 등) 중 사업부 자료에서 확인되는 항목 위주로
-  구성하세요. 이 상품만의 장소·코스·계절 이야기는 절대 여기 쓰지 마세요 — 그건
-  why_reasons의 역할입니다. why_reasons와 문장이 겹치면 안 됩니다.
-※ guide_profile: 인솔자·가이드·담당자의 실제 이력(경력, 등정/순례 횟수, 자격 등)이
-  사업부 자료에 있을 때만 채우세요. 있지도 않은 인물이나 이력을 지어내지 마세요. 없으면
-  빈 배열로 두세요.
-※ season: 사계절 내내 상시 운영되는 상품이 아닌 이상 반드시 채우세요 (season.content를
-  비워두지 마세요). 최적기, 피해야 할 시기, 특정 계절에만 볼 수 있는 것(개화·단풍·적설 등)
-  처럼 이 상품에 실제로 해당하는 계절 정보를 구체적으로 담으세요. 사계절 상시 운영
-  상품(계절 영향이 없는 도심 관광 등)일 때만 비워도 됩니다.
-※ season.stat_line: 계절 섹션 상단의 짧은 강조 배너 문구 (예: "최적기: O월~O월")
-※ season_table: 월별 기온 등 계절 통계가 사업부 자료에 있을 때만 채우세요. 없으면 빈
-  배열로 두세요.
-※ meal_info: "여행/트레킹 중 식사는 어떻게 하나요?" 같은 실용 정보 Q&A입니다. safety_note와
-  같은 형식(question/answer)이며, 사업부 자료에 식사 관련 정보(산장식/현지식/포함 여부 등)가
-  있을 때만 채우세요. 없으면 question, answer 모두 빈 문자열로 두세요.
-※ altitude_profile, safety_note: 고산 트레킹은 "고산증", 도보순례는 "체력/보험",
-  일반 하이킹은 "난이도" 등 카테고리에 맞는 안전/난이도 안내가 필요한 상품에만 채우세요.
-  해당 없는 상품(저지대 여행 등)이면 둘 다 빈 값/생략하세요. safety_note는 혜초 홈페이지의
-  표준 안내 톤(과장 없이 사실 위주)을 따르되, 신청 자격 제한이나 환불 불가 조건처럼 사업부
-  자료에 강한 경고성 유의사항이 있다면 완곡하게 순화하지 말고 사실대로 명확히 전달하세요.
-  altitude_profile의 distance(구간 거리, 예: "15km")와 duration(소요시간, 예: "약 6시간")은
-  사업부 자료에 있을 때만 채우고, 없으면 빈 문자열로 두세요. altitude_profile의 highlight는
-  그 구간에서 볼 수 있는 풍경이나 경험(예: "빙하와 협곡이 빚어낸 장관", "만년설 봉우리
-  파노라마")을 8~14자 이내로 간결하게 채우세요 — 이름과 거리만 나열하지 말고 각 구간이
-  실제로 왜 매력적인지 알 수 있게 하세요. 사업부 자료의 설명에 근거해 작성하고, 자료에
-  없으면 지형·코스 특징에 기반해 일반적인 수준으로 자연스럽게 표현해도 됩니다(사실
-  날조는 금지, 표현은 허용).
-※ banner_copy: 배너에 들어갈 문구로, cover.tagline이나 cover.product_name을 그대로
-  재사용하지 마세요. 훨씬 짧고 강렬하게 압축한 별도 카피입니다. kicker는 감성적인 후킹
-  문구 1~2줄(예: "봄으로 물든 카라코람을 걷다"), title은 굵고 임팩트 있는 핵심 키워드
-  1~2줄(예: "1년에 단 두 번, 카라코람 하이라이트")입니다. 실제 상품명·표지 카피와 정확히
-  일치할 필요는 없습니다 — 상품의 가장 눈에 띄는 포인트만 뽑아 짧게 후킹하는 것이
-  목적입니다.
-※ 사업부 자료에 정보가 부족한 필드(예: experience_points 문구)는 빈 값으로 두지
-  말고, 사업부 자료의 사실에 기반해 정현지 문체로 자연스럽게 채워서 완성하세요. 단, destinations나
-  route_compare, season_table, transport_spec.specs, guide_profile, meal_info,
-  altitude_profile의 distance/duration처럼 사실 데이터가 필요한 항목에 없는 내용을 새로
-  지어내는 것은 금지입니다 — 채우기는 "표현"에 대한 것이지 "사실 날조"가 아닙니다.""",
-    "신윤정": "__SAME_AS_정현지__",
-    "박소설": "__SAME_AS_정현지__",
-}
-SCHEMA_HINTS["박소설"] = SCHEMA_HINTS["정현지"]  # 박소설도 동일한 동적 빌더(builder.py) 스키마 사용
-SCHEMA_HINTS["신윤정"] = SCHEMA_HINTS["정현지"]  # 신윤정도 동일한 동적 빌더(builder.py) 스키마 사용
-SCHEMA_HINTS["최정인"] = SCHEMA_HINTS["정현지"]  # 최정인도 동일한 동적 빌더(builder.py) 스키마 사용
-
-DESTINATIONS_RULE = (
-    "[destinations 배열 규칙]\n"
-    "destinations는 실제 입력에 실제로 등장하는 경유지/명소 개수만큼만 생성하세요.\n"
-    "예를 들어 하이라이트가 3곳이면 정확히 3개만 만드세요. 템플릿에 슬롯이 몇 개 있든 "
-    "상관없이, 있지도 않은 경유지를 지어내서 슬롯을 채우면 안 됩니다. "
-    "부족한 슬롯은 조립 단계에서 자동으로 삭제됩니다."
-)
-
-def load_fewshot_examples(writer_style, category, k=3):
-    with open(FEWSHOT_PATH, encoding="utf-8") as f:
-        all_examples = json.load(f)
-
-    writer_style = _nfc(writer_style)
-    category = _nfc(category)
-
-    same = [e for e in all_examples
-            if _nfc(e["writer_style"]) == writer_style and _nfc(e["category"]) == category]
-    other_cat = [e for e in all_examples
-                 if _nfc(e["writer_style"]) == writer_style and _nfc(e["category"]) != category]
-    picked = (same[:2] + other_cat[:1])[:k]
-    return picked
-
-def build_system_prompt(writer_style, category, parsed_sections, format_info, has_images=False):
-    # load_fewshot_examples는 내부적으로 _nfc()로 정규화해서 비교하지만, 그건 그
-    # 함수 안에서만 쓰이는 로컬 변수라 여기 build_system_prompt의 writer_style
-    # 자체는 정규화되지 않은 채로 남아있었다 — 그 결과 STYLE_RULES[writer_style]처럼
-    # 바로 아래에서 하는 딕셔너리 조회는 그대로 원본 인코딩을 써서, Streamlit
-    # 화면의 selectbox에서 넘어온 문자열이 자모 분리형(NFD)이면(예: 맥OS 환경에서
-    # 저장된 template_map.json의 키가 NFD인 경우) 여기 파일에 NFC로 적힌 키와
-    # 안 맞아 KeyError가 났다("최정인" 추가 후 실제로 발생 — 화면엔 똑같이
-    # "최정인"으로 보여도 바이트 단위로는 다른 문자열이라 딕셔너리 조회가 실패함).
-    # 함수 맨 앞에서 한 번 정규화해두면 이 함수 안의 모든 딕셔너리 조회
-    # (STYLE_RULES/LAYOUT_HINT/BANNER_MAP_INCLUDE/SCHEMA_HINTS)와 f-string
-    # 삽입까지 전부 안전해진다.
-    writer_style = _nfc(writer_style)
-    category = _nfc(category)
-
-    examples = load_fewshot_examples(writer_style, category)
-    draft_copy = format_info.get("draft_copy")
-
-    if draft_copy:
-        copy_instruction = (
-            f"[표지 카피 생성 규칙 — 다듬기 모드]\n"
-            f"사업부 자료에 이미 카피 초안이 있습니다: \"{draft_copy}\"\n"
-            f"이 문구를 거의 그대로 유지하되, {writer_style}의 문체에 맞게 어미와 리듬만 다듬으세요. "
-            f"의미나 핵심 단어는 바꾸지 마세요."
-        )
-    else:
-        copy_instruction = (
-            f"[표지 카피 생성 규칙 — 창작 모드]\n"
-            f"사업부 자료에 카피 초안이 없습니다. '컨셉'과 '담당자 기획 의도'에 나온 핵심 개념을 "
-            f"재료로 삼아 {writer_style}의 문체로 2줄 태그라인을 새로 창작하세요."
-        )
-
-    prompt = f"""역할: 당신은 혜초여행사 콘텐츠팀의 {writer_style} 기획자입니다.
-
-[스타일 규칙]
-{STYLE_RULES[writer_style]}
-
-[레이아웃 규칙]
-why_reasons와 season 섹션은 {"같은 슬라이드에 합쳐서" if LAYOUT_HINT[writer_style]=="combined" else "별도 슬라이드로 나눠서"} 구성하세요.
-
-[웹 검색 도구]
-web_search 도구를 사용할 수 있습니다. 사업부 자료에 없는 배경지식·역사·지리적 사실이
-필요할 때(특히 background_story) 검색으로 확인한 뒤 반영하세요. 검색 없이 추측으로
-연도·수치·고유명사를 지어내지 마세요 — 확인 안 되면 그 세부사항은 빼세요.
-검색은 꼭 필요한 최소한(가능하면 1~2회)으로만 사용하세요. "검색을 진행하겠습니다",
-"검색 결과가 비어 있네요", "확인했습니다", "이제 ~하겠습니다" 같은 진행 상황 설명은
-단 한 글자도 출력하지 마세요 — 이런 문장이 섞이면 최종 응답 전체가 무효 처리됩니다.
-검색이 끝나면 다른 말 없이 곧바로 JSON 응답을 시작하세요. 최종 응답은 오직 JSON
-객체 하나만이어야 하며, 그 앞이나 뒤에 어떤 텍스트도 있으면 안 됩니다.
-배너/지도 슬라이드는 {"포함" if BANNER_MAP_INCLUDE[writer_style] else "생략"}하세요.
-
-[고정 문구 뱅크 — experience_points 전용]
-"혜초와 함께하면", "No 쇼핑! No 옵션!", "전 일정 인솔자 동행"
-→ experience_points에서만 문맥에 자연스럽게 녹여 쓰되 남발하지 않음. why_reasons에는
-이 문구들을 쓰지 마세요 (역할이 다릅니다 — 위 experience_points/why_reasons 설명 참고).
-
-{copy_instruction}
-
-[버전 분기 판단 — 대부분의 상품엔 해당 없음]
-사업부 자료 안에 "봄 버전과 가을 버전으로 2개로 해주세요"처럼, 계절이나 시기에 따라
-결과물 자체를 여러 개로 나눠 만들어달라는 명시적 요청이 있는지 확인하세요. 이런 요청이
-없으면(대부분의 경우) 아래 [출력 형식]대로 스키마 객체 하나만 그대로 출력하세요 — 이
-섹션은 무시하세요.
-명시적 요청이 있을 때만, 최종 응답을 아래처럼 감싸서 요청된 버전 개수만큼 각각 완전한
-스키마 객체를 만들어 담으세요:
-{{
-  "multi_version": true,
-  "versions": [
-    {{"version_label": "봄", ... 아래 스키마의 모든 필드 ...}},
-    {{"version_label": "가을", ... 아래 스키마의 모든 필드 ...}}
-  ]
-}}
-각 버전은 완전히 독립된 콘텐츠여야 합니다 — 사업부 자료가 지시한 대로 그 시기에 맞는
-표현(예: 봄=살구꽃, 가을=황금빛 미루나무)을 표지, 배경 설명, 계절 섹션, 목적지 설명 등
-관련된 모든 필드에 일관되게 반영하세요. 같은 문장을 복붙하지 말고 각 버전마다 그 계절/
-시기에 맞게 다시 쓰세요. version_label은 사업부 자료에 쓰인 표현을 그대로 쓰세요
-(예: "봄", "가을").
-
-[출력 형식]
-반드시 JSON으로만 응답하세요. 다른 텍스트를 포함하지 마세요. 응답은 반드시 중괄호
-{{ }}로 시작하는 JSON 객체 하나여야 합니다 — 대괄호 [ ]로 감싼 배열이 아닙니다.
-아래 [Few-shot 예시]는 여러 개라서 배열( [ ] )로 보여지는 것일 뿐이며, 당신의
-최종 답변은 그 예시들처럼 배열로 감싸지 말고 스키마와 똑같이 객체 하나만
-출력하세요 (예: [{{"cover": ...}}]가 아니라 {{"cover": ...}}) — 위 [버전 분기 판단]에
-해당하는 경우에만 예외적으로 "versions" 배열을 그 객체 "안에" 담습니다.
-
-[중요 — 모든 필드 공통 규칙]
-아래 스키마의 모든 값은 실제 고객이 보게 될 화면에 그대로 노출됩니다. 어떤 필드에도
-이 작업/문서 자체에 대한 메타 설명("상품 소개 기획안입니다", "디자인팀 전달용",
-"기획안", "AI가 생성한", "다음은 ~입니다" 등)을 쓰지 마세요. 모든 텍스트는 실제
-여행 상품을 소개하는 마케팅 카피여야 합니다.
-
-스키마 (이 구조를 정확히 따르세요. 필드를 빼거나 이름을 바꾸지 마세요):
-{SCHEMA_HINTS.get(writer_style, "(스키마 미정의 — 담당자에게 문의)")}
-
-{DESTINATIONS_RULE if "destinations" in SCHEMA_HINTS.get(writer_style, "") else ""}
-
-[Few-shot 예시 {len(examples)}개 — 문체·구조 참고 전용]
-아래 예시들은 전혀 다른 여행 상품(지명, 코스, 하이라이트 등)에 대한 과거 결과물입니다.
-문장 톤·문단 구성 방식·섹션 나누는 방식만 참고하세요.
-예시에 등장하는 지명, 상품명, 문구, 숫자, 이미지 캡션은 절대 그대로 재사용하지 마세요.
-아래 [실제 입력]에 없는 내용(예: 안데스, 페루, 마추픽추 등 예시 속 고유명사)이
-출력에 등장하면 안 됩니다. 반드시 [실제 입력]에 있는 사실만으로 콘텐츠를 생성하세요.
-{json.dumps(examples, ensure_ascii=False, indent=2)}
-
-[실제 입력 — 사업부 원본자료 파싱 결과 (이 내용만을 근거로 생성)]
-{json.dumps(parsed_sections, ensure_ascii=False, indent=2)}
-{"""
-[첨부 이미지]
-이 메시지에는 사업부에서 제공한 이미지 파일(사진, 지도, 옛 자료 스크린샷 등)이 함께
-첨부되어 있습니다. 이미지 안에 보이는 지명, 설명, 표, 일정 같은 실제 정보도 위 텍스트
-자료와 동등한 '사업부 원본자료'로 취급해 반영하세요. 다만 이미지가 단순 풍경/분위기
-참고용인 경우 억지로 사실 정보를 추출하려 하지 말고, 명확히 읽을 수 있는 텍스트/데이터만
-사용하세요.""" if has_images else ""}
+기존 assembler.py 방식(템플릿 기획안을 열어 shape_id별로 텍스트 주입)은
+- 옛 기획안의 이미지/깨진 도형이 그대로 남는 문제
+- 목적지 개수가 템플릿 슬롯 수와 안 맞으면 삭제 로직이 계속 필요한 문제
+가 있어서, 이 모듈은 옛 기획안(예: 안데스_템플릿.pptx)을 "디자인 참고용"으로만
+쓰고, 실제 출력은 python-pptx로 슬라이드를 새로 그린다.
 """
-    return prompt
+import json
+from pptx import Presentation
+from pptx.util import Emu, Pt, Inches
+from pptx.dml.color import RGBColor
+from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
+from pptx.enum.shapes import MSO_SHAPE
+
+# ---- 스타일 상수 (정현지 스타일 기본값) ----
+SLIDE_W = Emu(6858000)   # 원본 기획안과 동일한 슬라이드 크기 (약 7.5 x 10.83 inch, 모바일 세로형)
+SLIDE_H = Emu(9906000)
+FONT_NAME = "맑은 고딕"
+ACCENT_COLOR = RGBColor(0x1B, 0x4D, 0x6B)   # 진한 티얼/네이비 (섹션 바, 강조)
+TEXT_COLOR = RGBColor(0x22, 0x22, 0x22)
+WHITE = RGBColor(0xFF, 0xFF, 0xFF)
+MUTED_COLOR = RGBColor(0x66, 0x66, 0x66)
+MARGIN = Inches(0.4)
+CONTENT_W = SLIDE_W - MARGIN * 2
+
+
+def _tf_setup(tf, text, size, color, bold=False, align=PP_ALIGN.LEFT, font=FONT_NAME):
+    tf.word_wrap = True
+    lines = str(text).split("\n")
+    tf.text = lines[0]
+    p0 = tf.paragraphs[0]
+    p0.alignment = align
+    for run in p0.runs or [p0.add_run()]:
+        run.font.size = Pt(size)
+        run.font.bold = bold
+        run.font.color.rgb = color
+        run.font.name = font
+    for line in lines[1:]:
+        p = tf.add_paragraph()
+        p.text = line
+        p.alignment = align
+        r = p.add_run() if not p.runs else p.runs[0]
+        r.font.size = Pt(size)
+        r.font.bold = bold
+        r.font.color.rgb = color
+        r.font.name = font
+
+
+def estimate_text_height(text, size_pt, width_emu, line_spacing=1.22, bold=False):
+    """글자 수 기반으로 텍스트가 실제로 차지할 높이를 대략 추정한다.
+    고정 간격 대신 이걸 써야 설명 길이에 따라 다음 요소와 안 겹친다.
+    실제 렌더링 폭 추정은 부정확할 수 있어 여유 마진을 둔다(단, 슬라이드 장수를
+    압축하기 위해 과도한 여유는 줄였다 — line_spacing 1.35→1.22, 버퍼 0.15→0.08in)."""
+    if not text:
+        return Inches(0.1)
+    width_in = Emu(width_emu).inches
+    # 한글 기준 글자 폭 대략치 (볼드면 좀 더 넓게 잡음), 안전 마진 포함
+    char_w_in = (size_pt / 72) * (1.05 if bold else 0.95)
+    chars_per_line = max(1, int(width_in / char_w_in))
+    total_lines = 0
+    for line in str(text).split("\n"):
+        total_lines += max(1, -(-len(line) // chars_per_line))  # ceil
+    line_h_in = (size_pt / 72) * line_spacing
+    return Inches(total_lines * line_h_in + 0.08)  # 여유 마진
+
+
+def add_text(slide, left, top, width, height, text, size=14, color=TEXT_COLOR,
+             bold=False, align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.TOP):
+    box = slide.shapes.add_textbox(left, top, width, height)
+    tf = box.text_frame
+    tf.vertical_anchor = anchor
+    _tf_setup(tf, text, size, color, bold, align)
+    return box
+
+
+def add_section_bar(slide, top, text, height=Inches(0.45), size=15):
+    """섹션 제목이 들어가는 진한 색 배경 바 (예: '천장공로 하이라이트')"""
+    bar = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, MARGIN, top, CONTENT_W, height)
+    bar.fill.solid()
+    bar.fill.fore_color.rgb = ACCENT_COLOR
+    bar.line.fill.background()
+    tf = bar.text_frame
+    tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+    _tf_setup(tf, text, size, WHITE, bold=True, align=PP_ALIGN.CENTER)
+    return bar
+
+
+def add_image_placeholder(slide, left, top, width, height, label="이미지"):
+    box = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, left, top, width, height)
+    box.fill.background()
+    box.line.color.rgb = RGBColor(0xAA, 0xAA, 0xAA)
+    tf = box.text_frame
+    tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+    _tf_setup(tf, label, 11, MUTED_COLOR, align=PP_ALIGN.CENTER)
+    return box
+
+
+def add_small_image_placeholder(slide, top, width, height, label="이미지"):
+    """전체 폭을 다 차지하는 큰 이미지 자리 대신, 가로 폭도 훨씬 좁힌 작은 썸네일
+    크기 자리표시. CONTENT_W 안에서 가운데 정렬해서 배치한다. 실제 사진은 디자이너가
+    작업하므로, 여기서는 '사진이 들어갈 위치'만 작게 표시하고 나머지 공간은 텍스트가
+    위로 당겨져 채우게 한다."""
+    left = MARGIN + (CONTENT_W - width) / 2
+    return add_image_placeholder(slide, left, top, width, height, label)
+
+
+def _blank_slide(prs):
+    return prs.slides.add_slide(prs.slide_layouts[6])  # 완전 빈 레이아웃
+
+
+class SlideFlow:
+    """여러 섹션 함수가 슬라이드 하나를 공유해서 이어 쓸 수 있게 하는 커서.
+
+    PPTX는 프레젠테이션 전체가 슬라이드 높이를 하나만 가질 수 있어서(슬라이드별
+    높이 지정 불가), 식사 안내(1.6in)처럼 짧은 섹션도 그동안은 10.83in짜리 슬라이드를
+    통째로 차지해 빈 공간이 컸다. ensure()로 "남은 공간에 들어가면 이어 붙이고,
+    안 들어가면 새 슬라이드"를 섹션마다 판단해 슬라이드 장수와 여백을 줄인다."""
+
+    def __init__(self, prs):
+        self.prs = prs
+        self.slide = None
+        self.y = Inches(0.3)
+        self.bottom_limit = SLIDE_H - Inches(0.2)
+
+    def new_slide(self):
+        self.slide = _blank_slide(self.prs)
+        self.y = Inches(0.3)
+        return self.slide
+
+    def ensure(self, height, gap_before=Inches(0.35)):
+        """다음 섹션(height)을 놓을 자리를 확보한다. 이어 붙일 수 있으면 그 y좌표를,
+        없으면 새 슬라이드를 시작하고 그 y좌표를 반환한다."""
+        if self.slide is None:
+            self.new_slide()
+            return self.y
+        candidate_y = self.y + gap_before
+        if candidate_y + height > self.bottom_limit:
+            self.new_slide()
+            return self.y
+        self.y = candidate_y
+        return self.y
+
+
+# ---------------------------------------------------------------------------
+# 슬라이드 빌더 함수 (정현지 스타일) — 모두 SlideFlow를 받아 가능하면 같은
+# 슬라이드에 이어 그리고, 공간이 없을 때만 새 슬라이드를 시작한다.
+# ---------------------------------------------------------------------------
+
+def build_cover_slide(flow, cover, watermark_label=""):
+    """표지 슬라이드. tagline/product_name/subtitle 모두 고정 높이를 확보해두고
+    있었는데, 이 셋 다 AI가 채우는 가변 길이 텍스트라 길어지면 예상보다 줄바꿈이
+    늘어 바로 아래 요소와 겹칠 수 있다(background_story에서 실제로 발생한 것과
+    같은 문제 — 표지는 모든 상품에서 항상 렌더링되는 슬라이드라 잠재 위험이 가장
+    크다). estimate_text_height로 실제 줄 수를 추정해 안전하게 확보한다."""
+    slide = flow.new_slide()
+    y = flow.y
+    tagline = cover.get("tagline", "")
+    tagline_h = estimate_text_height(tagline, 13, CONTENT_W) if tagline else Inches(0.5)
+    add_text(slide, MARGIN, y, CONTENT_W, tagline_h, tagline,
+              size=13, color=MUTED_COLOR, align=PP_ALIGN.CENTER)
+    y += tagline_h + Inches(0.05)
+
+    product_name = cover.get("product_name", "")
+    product_h = estimate_text_height(product_name, 26, CONTENT_W, bold=True) if product_name else Inches(0.9)
+    add_text(slide, MARGIN, y, CONTENT_W, product_h, product_name,
+              size=26, bold=True, align=PP_ALIGN.CENTER)
+    y += product_h + Inches(0.05)
+
+    if cover.get("region_tag"):
+        region_h = estimate_text_height(cover["region_tag"], 13, CONTENT_W)
+        add_text(slide, MARGIN, y, CONTENT_W, region_h, cover["region_tag"],
+                  size=13, color=MUTED_COLOR, align=PP_ALIGN.CENTER)
+        y += region_h + Inches(0.05)
+    y += Inches(0.1)
+    add_small_image_placeholder(slide, y, Inches(2.3), Inches(0.9), "메인 이미지")
+    y += Inches(1.0)
+    if cover.get("subtitle"):
+        subtitle_h = estimate_text_height(cover["subtitle"], 14, CONTENT_W, bold=True)
+        add_text(slide, MARGIN, y, CONTENT_W, subtitle_h, cover["subtitle"],
+                  size=14, bold=True, align=PP_ALIGN.CENTER)
+        y += subtitle_h + Inches(0.05)
+    intro_h = estimate_text_height(cover.get("intro_copy", ""), 12, CONTENT_W)
+    add_text(slide, MARGIN, y, CONTENT_W, intro_h, cover.get("intro_copy", ""),
+              size=12, color=MUTED_COLOR, align=PP_ALIGN.CENTER)
+    y += intro_h
+    if watermark_label:
+        add_text(slide, SLIDE_W - Inches(1.5), Inches(0.15), Inches(1.1), Inches(0.3),
+                  watermark_label, size=11, bold=True, color=RGBColor(0xCC, 0xB0, 0x00),
+                  align=PP_ALIGN.RIGHT)
+    flow.y = y
+    return slide
+
+
+def build_destination_slides(flow, destinations, section_title=None, theme_line=None):
+    """목적지 개수만큼만 슬라이드를 만든다. 고정 개수로 나누지 않고, 실제 텍스트
+    길이를 추정해서 한 슬라이드에 들어갈 수 있는 만큼만 채우고 넘치면 다음 슬라이드로.
+    첫 슬라이드는 이전 섹션이 남긴 여백에 이어 붙일 수 있으면 이어 붙인다.
+
+    region_tag가 있는 방문지는 같은 그룹(성격이 비슷하거나 같은 지역)끼리 묶어서
+    그룹명을 소제목으로 한 번만 보여준다 — 예전엔 방문지마다 작은 라벨을 하나씩
+    달았는데, 그 라벨이 흰 글씨(WHITE)를 배경 없이 그냥 텍스트로 찍어서 화면에서
+    보이지도 않았고(멕시코 문명기행 테스트로 확인), 설령 보였어도 방문지 하나하나에
+    태그만 붙을 뿐 "묶어서 보여주는" 느낌은 아니었다. 사업부 자료에 이미 있는 그룹
+    구조(예: "[ 사포테카 문명 | 와하카 ]")를 살려 지역/테마별로 소제목 아래 방문지를
+    들여쓰기해서 묶어 보여주도록 다시 짰다 — region_tag가 없는 방문지는 예전처럼
+    그룹 소제목 없이 그냥 나열된다(하위 호환)."""
+    if not destinations:
+        return []
+    slides = []
+    idx = 0
+    first_slide = True
+    header_h = (Inches(0.55) if section_title else Inches(0)) + \
+               (Inches(0.4) if theme_line else Inches(0))
+    current_group = None  # 화면에 마지막으로 그린 그룹명 — 슬라이드가 넘어가도 유지
+
+    while idx < len(destinations):
+        if first_slide:
+            y = flow.ensure(header_h + Inches(0.5))  # 헤더 + 항목 하나 들어갈 여유
+            slide = flow.slide
+            if section_title:
+                add_section_bar(slide, y, section_title)
+                y += Inches(0.55)
+            if theme_line:
+                add_text(slide, MARGIN, y, CONTENT_W, Inches(0.35), theme_line,
+                          size=14, bold=True, align=PP_ALIGN.CENTER)
+                y += Inches(0.4)
+            first_slide = False
+        else:
+            slide = flow.new_slide()
+            y = flow.y
+            # 그룹이 슬라이드 경계를 넘어 이어지면, 새 슬라이드 맨 위에서도 그룹명을
+            # 다시 보여준다 — 안 그러면 방문지가 갑자기 그룹 없이 나온 것처럼 보인다.
+            if current_group:
+                label_h = estimate_text_height(current_group, 13, CONTENT_W, bold=True)
+                add_text(slide, MARGIN, y, CONTENT_W, label_h, current_group, size=13,
+                          bold=True, color=ACCENT_COLOR)
+                y += label_h + Inches(0.15)
+
+        indent = Inches(0.15)  # 그룹에 속한 방문지는 소제목 아래 있다는 느낌을 주기 위해 살짝 들여씀
+        placed_any = False
+        while idx < len(destinations):
+            dest = destinations[idx]
+            group = dest.get("region_tag") or None
+            is_new_group = bool(group) and group != current_group
+            title_w = CONTENT_W - (indent if group else Inches(0))
+            title_h = estimate_text_height(dest.get("title", ""), 15, title_w, bold=True)
+            image_h = Inches(0.45)
+            desc_h = estimate_text_height(dest.get("description", ""), 12, title_w)
+            group_label_h = Inches(0)
+            if is_new_group:
+                group_label_h = estimate_text_height(group, 13, CONTENT_W, bold=True) + Inches(0.15)
+            block_h = group_label_h + title_h + Inches(0.06) + image_h + Inches(0.1) \
+                + desc_h + Inches(0.18)
+
+            if placed_any and y + block_h > flow.bottom_limit:
+                break  # 이 슬라이드엔 더 안 들어감 -> 다음 슬라이드로
+
+            if is_new_group:
+                label_h = group_label_h - Inches(0.15)
+                add_text(slide, MARGIN, y, CONTENT_W, label_h, group, size=13,
+                          bold=True, color=ACCENT_COLOR)
+                y += group_label_h
+                current_group = group
+
+            x = MARGIN + (indent if group else Inches(0))
+            add_text(slide, x, y, title_w, title_h, dest.get("title", ""),
+                      size=15, bold=True)
+            y += title_h + Inches(0.06)
+            add_small_image_placeholder(slide, y, Inches(1.6), image_h, "이미지")
+            y += image_h + Inches(0.1)
+            add_text(slide, x, y, title_w, desc_h, dest.get("description", ""),
+                      size=12, color=MUTED_COLOR)
+            y += desc_h + Inches(0.18)
+
+            placed_any = True
+            idx += 1
+
+        flow.y = y
+        slides.append(slide)
+    return slides
+
+
+def build_background_slide(flow, background_story):
+    """배경 이야기 섹션. 예전엔 "OOO란?" 형태의 kicker 소제목을 title 위에 따로
+    붙였는데, 모든 상품 기획안에 기계적으로 반복되는 상투적 표현이라 제거함
+    (title만으로 바로 임팩트 있게 시작 — prompt_builder.py도 함께 수정됨).
+
+    title은 20pt 굵은 글씨라 길면 2줄로 줄바꿈되는데, 예전엔 고정 Inches(0.55)만
+    확보해두고 그 아래 content를 바로 이어 그려서, title이 2줄이 되는 순간 content
+    첫 줄과 겹치는 버그가 있었다(카라코람 가을 버전 테스트에서 확인됨 — "실크로드의
+    마지막 관문, 카라코람이 품은 가을의 황금빛"이 2줄로 줄바꿈되며 바로 아래 문단과
+    겹쳤음). build_experience_slide/build_safety_slide와 같은 문제라 같은 방식
+    (estimate_text_height로 실제 높이 추정)으로 고친다."""
+    if not background_story:
+        return None
+    title = background_story.get("title", "")
+    content = background_story.get("content", "")
+    title_h = estimate_text_height(title, 20, CONTENT_W, bold=True) if title else Inches(0)
+    content_h = estimate_text_height(content, 12, CONTENT_W)
+    total_h = (title_h + Inches(0.1) if title else Inches(0)) + content_h
+
+    y = flow.ensure(total_h)
+    slide = flow.slide
+    if title:
+        add_text(slide, MARGIN, y, CONTENT_W, title_h, title,
+                  size=20, bold=True, align=PP_ALIGN.CENTER)
+        y += title_h + Inches(0.1)
+    add_text(slide, MARGIN, y, CONTENT_W, content_h, content, size=12, align=PP_ALIGN.CENTER)
+    y += content_h
+    flow.y = y
+    return slide
+
+
+def build_reasons_slide(flow, why_reasons, product_name=""):
+    """'왜 사천성인가' 같은 이유 N가지 섹션.
+    타이틀은 AI에게 맡기지 않고 "{상품명} 포인트 0N" 형태로 코드에서 자동 생성한다
+    (개수 기반 기계적 표기라 AI보다 코드가 더 정확함)."""
+    if not why_reasons:
+        return None
+    heading = f"{product_name} 포인트 {len(why_reasons):02d}".strip()
+    reason_blocks = []
+    total_h = Inches(0.6)
+    for reason in why_reasons:
+        title_h = estimate_text_height(reason.get("title", ""), 15, CONTENT_W, bold=True)
+        content_h = estimate_text_height(reason.get("content", ""), 12, CONTENT_W)
+        reason_blocks.append((title_h, content_h))
+        total_h += title_h + Inches(0.07) + content_h + Inches(0.22)
+
+    y = flow.ensure(total_h)
+    slide = flow.slide
+    add_section_bar(slide, y, heading)
+    y += Inches(0.6)
+    for reason, (title_h, content_h) in zip(why_reasons, reason_blocks):
+        add_text(slide, MARGIN, y, CONTENT_W, title_h, reason.get("title", ""),
+                  size=15, bold=True, color=ACCENT_COLOR, align=PP_ALIGN.CENTER)
+        y += title_h + Inches(0.07)
+        add_text(slide, MARGIN, y, CONTENT_W, content_h, reason.get("content", ""),
+                  size=12, align=PP_ALIGN.CENTER)
+        y += content_h + Inches(0.22)
+    flow.y = y
+    return slide
+
+
+def build_transport_slide(flow, transport_spec):
+    """열차/크루즈처럼 이동수단 자체가 상품의 핵심 매력인 경우의 스펙 섹션.
+    안나푸르나(2296 남극 크루즈), 호주 더 간 열차(1827) 상품설명 이미지 분석에서
+    반복 확인된 "이동수단 스펙표"(객실타입/부대시설/톤수/안전등급 등) 패턴을 반영."""
+    if not transport_spec or not transport_spec.get("specs"):
+        return None
+    image_h = Inches(0.95)
+    rows = []
+    total_h = (Inches(0.55) if transport_spec.get("title") else Inches(0)) + image_h
+    for spec in transport_spec["specs"]:
+        label = spec.get("label", "")
+        value = spec.get("value", "")
+        row_h = estimate_text_height(f"{label}: {value}", 12, CONTENT_W)
+        rows.append((label, value, row_h))
+        total_h += row_h + Inches(0.07)
+
+    y = flow.ensure(total_h)
+    slide = flow.slide
+    if transport_spec.get("title"):
+        add_section_bar(slide, y, transport_spec["title"])
+        y += Inches(0.55)
+    add_small_image_placeholder(slide, y, Inches(2.2), Inches(0.85), "이동수단 이미지")
+    y += image_h
+    for label, value, row_h in rows:
+        add_text(slide, MARGIN, y, Inches(1.6), row_h, label, size=12, bold=True, color=ACCENT_COLOR)
+        add_text(slide, MARGIN + Inches(1.7), y, CONTENT_W - Inches(1.7), row_h, value, size=12)
+        y += row_h + Inches(0.07)
+    flow.y = y
+    return slide
+
+
+def build_guide_slide(flow, guide_profile):
+    """인솔자/가이드/담당 임원 프로필 섹션. 제주도 가이드 이력, 산티아고 인솔자
+    경력 카드, 트레킹(킬리만자로 40회 등정 임원) 상품설명 이미지에서 반복 확인된
+    "회사 구성원 신뢰 요소" 패턴을 반영."""
+    if not guide_profile:
+        return None
+    header_h = Inches(0.55)
+    bio_heights = []
+    total_h = header_h
+    for guide in guide_profile:
+        bio_h = estimate_text_height(guide.get("bio", ""), 11, CONTENT_W)
+        bio_heights.append(bio_h)
+        total_h += Inches(1.18) + Inches(0.25) + bio_h + Inches(0.18)
+
+    y = flow.ensure(total_h)
+    slide = flow.slide
+    add_section_bar(slide, y, "함께하는 사람들")
+    y += header_h
+    for guide, bio_h in zip(guide_profile, bio_heights):
+        add_small_image_placeholder(slide, y, Inches(1.1), Inches(1.1), "프로필 사진")
+        y += Inches(1.18)
+        name_title = guide.get("name", "")
+        if guide.get("title"):
+            name_title = f"{name_title}  ({guide['title']})" if name_title else guide["title"]
+        add_text(slide, MARGIN, y, CONTENT_W, Inches(0.28), name_title, size=13, bold=True,
+                  align=PP_ALIGN.CENTER)
+        y += Inches(0.25)
+        add_text(slide, MARGIN, y, CONTENT_W, bio_h, guide.get("bio", ""), size=11,
+                  color=MUTED_COLOR, align=PP_ALIGN.CENTER)
+        y += bio_h + Inches(0.18)
+    flow.y = y
+    return slide
+
+
+def build_meal_slide(flow, meal_info):
+    """"트레킹/여행 중 식사는 어떻게 하나요?" 실용 정보 Q&A 섹션. 일본알프스,
+    키르기즈스탄, 마칼루, 하얼빈 등 지역이 전혀 다른 다수 상품에서 반복 확인된
+    패턴으로, safety_note와 동일한 question/answer 구조를 재사용."""
+    if not meal_info or not meal_info.get("question"):
+        return None
+    question_h = estimate_text_height(meal_info["question"], 15, CONTENT_W, bold=True)
+    ans_h = estimate_text_height(meal_info.get("answer", ""), 12, CONTENT_W)
+    total_h = question_h + Inches(0.1) + ans_h
+
+    y = flow.ensure(total_h)
+    slide = flow.slide
+    add_text(slide, MARGIN, y, CONTENT_W, question_h, meal_info["question"], size=15,
+              bold=True, align=PP_ALIGN.CENTER)
+    y += question_h + Inches(0.1)
+    add_text(slide, MARGIN, y, CONTENT_W, ans_h, meal_info.get("answer", ""), size=12,
+              align=PP_ALIGN.CENTER)
+    y += ans_h
+    flow.y = y
+    return slide
+
+
+def build_route_compare_slide(flow, route_compare):
+    """두 노선/코스를 비교하는 표 섹션"""
+    if not route_compare or not route_compare.get("routes"):
+        return None
+    routes = route_compare["routes"]
+    row_h = Inches(0.9)
+    header_h = Inches(0.6) if route_compare.get("title") else Inches(0)
+    total_h = header_h + Inches(0.5) + row_h * 4  # 이름줄(0.5) + 기준 4행
+
+    y = flow.ensure(total_h)
+    slide = flow.slide
+    if route_compare.get("title"):
+        add_section_bar(slide, y, route_compare["title"])
+        y += Inches(0.6)
+    col_w = CONTENT_W / len(routes)
+    criteria = ["course", "scenery", "appeal", "summary"]
+    criteria_label = {"course": "코스", "scenery": "풍경", "appeal": "매력", "summary": "한줄 요약"}
+    for ri, route in enumerate(routes):
+        x = MARGIN + col_w * ri
+        add_text(slide, x, y, col_w, Inches(0.4), route.get("name", ""), size=14, bold=True,
+                  align=PP_ALIGN.CENTER, color=ACCENT_COLOR)
+    y += Inches(0.5)
+    for crit in criteria:
+        for ri, route in enumerate(routes):
+            x = MARGIN + col_w * ri
+            val = route.get(crit, "")
+            add_text(slide, x, y, col_w, row_h, f"[{criteria_label[crit]}]\n{val}", size=10,
+                      align=PP_ALIGN.CENTER)
+        y += row_h
+    flow.y = y
+    return slide
+
+
+def build_experience_slide(flow, brand_tagline, experience_points):
+    """브랜드 소구 문구 + 경험 포인트(아이콘 카드 N개).
+    예전엔 brand_points(불릿 목록)를 따로 받아 여기 같이 나열했는데, experience_points와
+    내용이 거의 그대로 중복되는 문제가 있어(예: '노쇼핑/노옵션'이 두 번 나옴) brand_points는
+    제거하고 experience_points 하나로 통일한다."""
+    if not brand_tagline and not experience_points:
+        return None
+    tagline_h = estimate_text_height(brand_tagline, 16, CONTENT_W, bold=True) if brand_tagline else Inches(0)
+    col_w = CONTENT_W / len(experience_points) if experience_points else CONTENT_W
+    title_h = Inches(0)
+    desc_h = Inches(0)
+    if experience_points:
+        title_h = max(
+            estimate_text_height(ep.get("title", ""), 12, col_w - Inches(0.1), bold=True)
+            for ep in experience_points
+        )
+        desc_h = max(
+            estimate_text_height(ep.get("description", ""), 10, col_w - Inches(0.1))
+            for ep in experience_points
+        )
+    # 카드 제목이 1줄일 때만 맞는 고정 간격(예전 Inches(0.3))을 쓰면, 제목이 2줄로
+    # 줄바꿈되는 순간 바로 아래 설명 텍스트와 겹치는 버그가 있었음 — title_h를 실제
+    # 추정 높이로 계산해서 다음 요소를 그만큼 아래로 밀어내도록 수정.
+    total_h = (tagline_h + Inches(0.2) if brand_tagline else Inches(0)) \
+        + (Inches(0.65) + title_h + Inches(0.1) + desc_h if experience_points else Inches(0))
+
+    y = flow.ensure(total_h)
+    slide = flow.slide
+    if brand_tagline:
+        add_text(slide, MARGIN, y, CONTENT_W, tagline_h, brand_tagline, size=16, bold=True,
+                  align=PP_ALIGN.CENTER)
+        y += tagline_h + Inches(0.2)
+    if experience_points:
+        for i, ep in enumerate(experience_points):
+            x = MARGIN + col_w * i
+            add_image_placeholder(slide, x + Inches(0.05), y, col_w - Inches(0.1), Inches(0.55), "아이콘")
+        y += Inches(0.65)
+        for i, ep in enumerate(experience_points):
+            x = MARGIN + col_w * i
+            add_text(slide, x, y, col_w - Inches(0.1), title_h, ep.get("title", ""), size=12,
+                      bold=True, align=PP_ALIGN.CENTER)
+        y += title_h + Inches(0.1)
+        for i, ep in enumerate(experience_points):
+            x = MARGIN + col_w * i
+            dh = estimate_text_height(ep.get("description", ""), 10, col_w - Inches(0.1))
+            add_text(slide, x, y, col_w - Inches(0.1), dh, ep.get("description", ""), size=10,
+                      color=MUTED_COLOR, align=PP_ALIGN.CENTER)
+        y += desc_h
+    flow.y = y
+    return slide
+
+
+def build_highlights_slides(flow, highlights, heading=None):
+    """번호 매긴 여정 하이라이트 카드 (destinations와 별개 — 더 큰 테마 단위)"""
+    if not highlights:
+        return []
+    heading = heading or "여정 하이라이트"  # AI가 빠뜨려도 타이틀 없는 슬라이드가 나가지 않도록 기본값
+    slides = []
+    idx = 0
+    first = True
+    header_h = Inches(0.55)
+
+    while idx < len(highlights):
+        if first:
+            y = flow.ensure(header_h + Inches(0.5))
+            slide = flow.slide
+            add_section_bar(slide, y, heading)
+            y += header_h
+            first = False
+        else:
+            slide = flow.new_slide()
+            y = flow.y
+
+        placed_any = False
+        while idx < len(highlights):
+            item = highlights[idx]
+            num_label = f"{idx + 1:02d}"
+            title_h = estimate_text_height(item.get("title", ""), 14, CONTENT_W, bold=True)
+            image_h = Inches(0.45)
+            desc_h = estimate_text_height(item.get("description", ""), 11, CONTENT_W)
+            block_h = Inches(0.22) + title_h + Inches(0.06) + image_h + Inches(0.1) + desc_h + Inches(0.18)
+            if placed_any and y + block_h > flow.bottom_limit:
+                break
+            add_text(slide, MARGIN, y, Inches(0.6), Inches(0.25), num_label, size=13, bold=True,
+                      color=ACCENT_COLOR)
+            y += Inches(0.26)
+            add_text(slide, MARGIN, y, CONTENT_W, title_h, item.get("title", ""), size=14, bold=True)
+            y += title_h + Inches(0.06)
+            add_small_image_placeholder(slide, y, Inches(1.6), image_h, "이미지")
+            y += image_h + Inches(0.1)
+            add_text(slide, MARGIN, y, CONTENT_W, desc_h, item.get("description", ""), size=11,
+                      color=MUTED_COLOR)
+            y += desc_h + Inches(0.18)
+            placed_any = True
+            idx += 1
+
+        flow.y = y
+        slides.append(slide)
+    return slides
+
+
+def build_season_slide(flow, season, season_table=None):
+    if not season or (not season.get("content") and not season_table):
+        return None
+    header_h = Inches(0.6)
+    stat_h = Inches(0.5) if season.get("stat_line") else Inches(0)
+    content_h = estimate_text_height(season.get("content", ""), 12, CONTENT_W)
+    table_h = Inches(0.85) + Inches(0.3) if season_table else Inches(0)
+    total_h = header_h + stat_h + content_h + Inches(0.3) + table_h
+
+    y = flow.ensure(total_h)
+    slide = flow.slide
+    add_section_bar(slide, y, season.get("title", "언제 가면 좋을까?"))
+    y += header_h
+    if season.get("stat_line"):
+        bar = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, MARGIN, y, CONTENT_W, Inches(0.4))
+        bar.fill.solid()
+        bar.fill.fore_color.rgb = ACCENT_COLOR
+        bar.line.fill.background()
+        _tf_setup(bar.text_frame, season["stat_line"], 13, WHITE, bold=True, align=PP_ALIGN.CENTER)
+        bar.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
+        y += Inches(0.5)
+    add_text(slide, MARGIN, y, CONTENT_W, content_h, season.get("content", ""), size=12)
+    y += content_h + Inches(0.3)
+    if season_table:
+        add_image_placeholder(slide, MARGIN, y, CONTENT_W, Inches(0.7),
+                               "월별 기온 차트 (자리표시 — 실제 그래픽은 디자이너 작업)")
+        y += Inches(0.85)
+        header = "  ".join(f"{row.get('month','')}" for row in season_table)
+        add_text(slide, MARGIN, y, CONTENT_W, Inches(0.3), header, size=10, color=MUTED_COLOR,
+                  align=PP_ALIGN.CENTER)
+        y += Inches(0.3)
+    flow.y = y
+    return slide
+
+
+def build_safety_slide(flow, altitude_profile, safety_note):
+    """경유지 고도 프로필(있는 경우) + 안전/난이도 관련 표준 안내.
+    고산 트레킹의 '고산증', 도보순례의 '체력/보험', 일반 하이킹의 '난이도' 등
+    카테고리에 따라 톤이 다른 표준 안내문을 담는 범용 섹션."""
+    if not altitude_profile and not safety_note:
+        return None
+    ans_h = Inches(0)
+    question_h = Inches(0)
+    qa_h = Inches(0)
+    if safety_note and safety_note.get("question"):
+        question_h = estimate_text_height(safety_note["question"], 15, CONTENT_W, bold=True)
+        ans_h = estimate_text_height(safety_note.get("answer", ""), 12, CONTENT_W)
+        qa_h = question_h + Inches(0.1) + ans_h + Inches(0.35)
+
+    n = len(altitude_profile) if altitude_profile else 0
+    col_w = CONTENT_W / max(n, 1)
+    gap = Inches(0.06)
+    labels = []
+    if altitude_profile:
+        for stop in altitude_profile:
+            # 자리표시 박스는 "숙박"이 아니라 "지도"여야 함 — 예전 코드가 숙박/롯지
+            # 소개 슬라이드에서 라벨만 안 바꾼 채 복붙된 흔적으로 보임.
+            label = f"{stop.get('name','')}\n{stop.get('altitude','')}"
+            extra = " / ".join(v for v in (stop.get("distance"), stop.get("duration")) if v)
+            if extra:
+                label += f"\n{extra}"
+            if stop.get("highlight"):
+                label += f"\n{stop['highlight']}"
+            labels.append(label)
+    # 라벨 줄 수가 highlight 유무에 따라 2~4줄로 달라지므로, 고정 Inches(0.65) 대신
+    # 실제 텍스트 높이를 추정해서 다음 요소와 겹치지 않게 함(build_experience_slide와
+    # 동일한 문제였음).
+    label_h = max((estimate_text_height(l, 9, col_w - gap * 2) for l in labels), default=Inches(0.5))
+    profile_h = (Inches(0.4) + Inches(0.6) + label_h) if altitude_profile else Inches(0)
+    total_h = qa_h + profile_h
+
+    y = flow.ensure(total_h)
+    slide = flow.slide
+    if safety_note and safety_note.get("question"):
+        add_text(slide, MARGIN, y, CONTENT_W, question_h, safety_note["question"], size=15,
+                  bold=True, align=PP_ALIGN.CENTER)
+        y += question_h + Inches(0.1)
+        add_text(slide, MARGIN, y, CONTENT_W, ans_h, safety_note.get("answer", ""), size=12,
+                  align=PP_ALIGN.CENTER)
+        y += ans_h + Inches(0.35)
+    if altitude_profile:
+        add_text(slide, MARGIN, y, CONTENT_W, Inches(0.3),
+                  "구간별 고도 프로필 (자리표시 — 실제 그래픽은 디자이너 작업)",
+                  size=10, color=MUTED_COLOR, align=PP_ALIGN.CENTER)
+        y += Inches(0.4)
+        for i in range(n):
+            x = MARGIN + col_w * i
+            add_image_placeholder(slide, x + gap, y, col_w - gap * 2, Inches(0.5), "지도")
+        y += Inches(0.6)
+        for i, label in enumerate(labels):
+            x = MARGIN + col_w * i
+            add_text(slide, x + gap, y, col_w - gap * 2, label_h, label, size=9, align=PP_ALIGN.CENTER)
+        y += label_h
+    flow.y = y
+    return slide
+
+
+def build_banner_request_slide(flow, cover, banner_copy=None):
+    """배너 기획 페이지 — 실제 회사 배너제작 템플릿(배너제작.pptx)의 레이아웃을
+    그대로 재현. 4개 배너 슬롯(메인 와이드/서브메인 띠/서브메인 2단/지역 리스트)에
+    각각 이미지 자리와 '태그라인+타이틀' 텍스트를 넣는다. 스펙 라벨/안내 문구는
+    회사 표준이라 고정값이며, 지역/상품과 무관하게 항상 그대로 포함. 절대 위치로
+    실제 배너 템플릿과 맞춰야 해서 다른 섹션과 공유하지 않고 항상 전용 슬라이드로 만든다.
+
+    예전엔 cover.tagline+product_name(표지 전체 카피)을 4개 슬롯에 그대로 복붙해서
+    문구가 길고 밋밋했음 — 실제 회사 배너는 표지 카피와 다르게, 상품에서 가장
+    눈에 띄는 포인트만 뽑아 훨씬 짧고 강렬하게 압축한 별도 카피를 쓴다(첨부 배너
+    예시: "봄으로 물든 차마고도를 걷다 / 카피할 수 없는 오리지널의 위엄" +
+    "세계 3대 트레킹 / 호도협·옥룡설산"). banner_copy가 있으면 그걸 쓰고, AI가
+    누락했을 때만 cover 필드로 대체(하위 호환).
+
+    4개 슬롯 모두 "부제(후킹 카피) + 상품명(타이틀)" 두 요소를 함께 넣는다. 처음엔
+    상품명을 부제보다 작게 눌러서 부제(후킹 문구)가 시선을 먼저 받게 했었는데,
+    실제 배너에서는 반대로 상품명(타이틀)이 메인 카피이고 부제는 그걸 보조하는
+    작은 문구라는 피드백을 받아 위계를 뒤집었다 — 부제는 작고 옅게, 상품명은
+    크고 굵게 렌더링한다. 부제와 상품명을 하나의 멀티라인 텍스트박스에 같은
+    크기로 합쳐 넣으면(예전 방식) 위계가 전혀 안 생기고, 심지어 메인 와이드
+    배너는 상품명 자체가 빠지는 버그가 있었다(카라코람 테스트에서 확인됨) —
+    부제와 상품명을 별도 텍스트박스로 쌓아 크기를 다르게 주고, 4개 슬롯 전부에
+    상품명을 반드시 포함시킨다."""
+    slide = flow.new_slide()
+    banner_copy = banner_copy or {}
+    kicker = banner_copy.get("kicker") or cover.get("tagline", "")
+    title = banner_copy.get("title") or cover.get("product_name", "")
+    product_name = cover.get("product_name", "")
+
+    def _add_banner_copy(left, top, width, subtitle_text, subtitle_size, name_size):
+        """부제(작고 옅은 글씨)를 먼저 쌓고, 그 아래 상품명/타이틀(더 크고 굵은
+        글씨)을 이어 쌓는다 — 실제 들어간 줄 수에 맞춰 높이를 추정해서 다음
+        요소랑 안 겹치게 한다."""
+        y = top
+        if subtitle_text:
+            h = estimate_text_height(subtitle_text, subtitle_size, width)
+            add_text(slide, left, y, width, h, subtitle_text, size=subtitle_size,
+                      color=MUTED_COLOR, align=PP_ALIGN.CENTER)
+            y += h
+        if product_name:
+            h = estimate_text_height(product_name, name_size, width, bold=True)
+            add_text(slide, left, y, width, h, product_name, size=name_size,
+                      bold=True, align=PP_ALIGN.CENTER)
+            y += h
+        return y
+
+    add_section_bar(slide, Inches(0), "배너 기획", height=Inches(0.47), size=14)
+    add_text(slide, Inches(0.106), Inches(0.675), Inches(1.717), Inches(0.404),
+              "배너제작요청", size=13, bold=True)
+    add_text(slide, Inches(1.823), Inches(0.733), Inches(4.672), Inches(0.303),
+              "홈페이지 개편에 따라, 배너 디자인이 전면 교체되었습니다.", size=9, color=MUTED_COLOR)
+
+    # 메인 와이드 배너 — 부제 2줄(kicker+title, 후킹 카피, size 11) + 상품명(size 18, 굵게)
+    add_text(slide, Inches(0.106), Inches(1.271), Inches(5.701), Inches(0.303),
+              "메인 와이드 배너 (PC: 1920x700, MO: 750x510), 가이드라인에 맞춰 제작", size=9, color=MUTED_COLOR)
+    add_image_placeholder(slide, Inches(0.217), Inches(1.630), Inches(5.475), Inches(1.817), "이미지")
+    _add_banner_copy(Inches(0.388), Inches(2.158), Inches(5.133),
+                      f"{kicker}\n{title}", subtitle_size=11, name_size=18)
+
+    # 서브메인 띠배너 — 부제 1줄(kicker, size 11) + 상품명(size 16, 굵게)
+    add_text(slide, Inches(0.081), Inches(3.581), Inches(5.642), Inches(0.303),
+              "서브메인 띠배너 (PC: 1920x200, MO: 750x200), 가이드라인에 맞춰 제작", size=9, color=MUTED_COLOR)
+    add_image_placeholder(slide, Inches(0.136), Inches(4.021), Inches(7.028), Inches(0.979), "이미지")
+    _add_banner_copy(Inches(1.184), Inches(4.173), Inches(5.133),
+                      kicker, subtitle_size=11, name_size=16)
+
+    # 서브메인 2단배너 — 부제 1줄(kicker, size 9) + 상품명(size 13, 굵게)
+    add_text(slide, Inches(0.136), Inches(5.137), Inches(5.642), Inches(0.303),
+              "서브메인 2단배너 (PC: 590x370, MO: 585x670), 가이드라인에 맞춰 제작", size=9, color=MUTED_COLOR)
+    add_image_placeholder(slide, Inches(0.221), Inches(5.521), Inches(2.835), Inches(1.771), "이미지")
+    _add_banner_copy(Inches(0.288), Inches(6.138), Inches(2.835),
+                      kicker, subtitle_size=9, name_size=13)
+
+    # 지역 리스트 배너 — 부제 1줄(kicker, size 11) + 상품명(size 16, 굵게)
+    add_text(slide, Inches(0.205), Inches(7.481), Inches(5.701), Inches(0.303),
+              "지역 리스트 배너 (PC: 1200x207, MO: 750x207), 가이드라인에 맞춰 제작", size=9, color=MUTED_COLOR)
+    add_image_placeholder(slide, Inches(0.316), Inches(7.989), Inches(6.871), Inches(1.336), "이미지")
+    _add_banner_copy(Inches(1.184), Inches(8.280), Inches(5.133),
+                      kicker, subtitle_size=11, name_size=16)
+
+    return slide
+
+
+def build_review_notes_slide(flow, review):
+    """Gemini 교차검수 결과를 PPTX 마지막 페이지에 그대로 남긴다 — 예전엔 Streamlit
+    화면에만 표시되고 다운로드한 PPTX에는 안 남아서, 파일만 디자이너/다른 담당자에게
+    넘기면 검수 내역이 통째로 사라지는 문제가 있었다. review가 없거나 검수 자체를
+    건너뛴 경우(_dry_run — GEMINI_API_KEY 미설정)는 내용 없는 안내 페이지를 억지로
+    넣지 않기 위해 슬라이드를 만들지 않는다."""
+    if not review or review.get("_dry_run"):
+        return []
+    issues = review.get("issues") or []
+
+    slide = flow.new_slide()
+    y = flow.y
+    add_section_bar(slide, y, "Gemini 교차검수 결과 (내부 참고용)")
+    y += Inches(0.55)
+    slides = [slide]
+
+    if not issues:
+        add_text(slide, MARGIN, y, CONTENT_W, Inches(0.4),
+                  "✅ 검수 통과 — 왜곡/날조·저작권/표절·사실확인·비문/맞춤법 이슈가 "
+                  "발견되지 않았습니다.", size=12, align=PP_ALIGN.CENTER)
+        flow.y = y + Inches(0.4)
+        return slides
+
+    if review.get("summary"):
+        summary_h = estimate_text_height(review["summary"], 11, CONTENT_W)
+        add_text(slide, MARGIN, y, CONTENT_W, summary_h, review["summary"], size=11,
+                  color=MUTED_COLOR)
+        y += summary_h + Inches(0.2)
+
+    for issue in issues:
+        header_text = f"[{issue.get('category', '')} · {issue.get('severity', '')}] {issue.get('field', '')}"
+        header_h = estimate_text_height(header_text, 12, CONTENT_W, bold=True)
+        quote = issue.get("quote", "")
+        quote_h = estimate_text_height(quote, 10, CONTENT_W - Inches(0.2)) if quote else Inches(0)
+        explanation_h = estimate_text_height(issue.get("explanation", ""), 11, CONTENT_W)
+        block_h = header_h + Inches(0.05) \
+            + (quote_h + Inches(0.05) if quote else Inches(0)) \
+            + explanation_h + Inches(0.22)
+
+        if y + block_h > flow.bottom_limit:
+            slide = flow.new_slide()
+            y = flow.y
+            slides.append(slide)
+
+        add_text(slide, MARGIN, y, CONTENT_W, header_h, header_text, size=12, bold=True,
+                  color=ACCENT_COLOR)
+        y += header_h + Inches(0.05)
+        if quote:
+            add_text(slide, MARGIN + Inches(0.1), y, CONTENT_W - Inches(0.2), quote_h,
+                      f"“{quote}”", size=10, color=MUTED_COLOR)
+            y += quote_h + Inches(0.05)
+        add_text(slide, MARGIN, y, CONTENT_W, explanation_h, issue.get("explanation", ""), size=11)
+        y += explanation_h + Inches(0.22)
+
+    flow.y = y
+    return slides
+
+
+def build(content_json, out_path, review=None):
+    """content_json(정현지 스키마) -> 새 PPTX 파일 생성.
+    review(reviewer.review_content()의 반환값)를 넘기면 마지막에 검수 결과 페이지를
+    덧붙인다 — 넘기지 않으면(기본값 None) 예전과 동일하게 검수 페이지 없이 생성된다."""
+    prs = Presentation()
+    prs.slide_width = SLIDE_W
+    prs.slide_height = SLIDE_H
+    flow = SlideFlow(prs)
+
+    cover = content_json.get("cover", {})
+    build_cover_slide(flow, cover, content_json.get("watermark_label", ""))
+    build_background_slide(flow, content_json.get("background_story"))
+    build_reasons_slide(flow, content_json.get("why_reasons"), product_name=cover.get("product_name", ""))
+    build_destination_slides(
+        flow,
+        content_json.get("destinations", []),
+        section_title=content_json.get("destinations_heading"),
+        theme_line=None,
+    )
+    # tour_spots: 트레킹 상품 중 트레킹 코스 + 관광(도시/유적/박물관) 코스가 함께 있는
+    # 경우에만 채워진다 — 카라코람 테스트에서 훈자 마을/이슬라마바드/탁실라 박물관 같은
+    # "관광" 코스가 트레킹 코스(destinations)와 구분 없이 한 섹션에 섞여 나온 문제를
+    # 고치기 위해 별도 섹션으로 분리했다. build_destination_slides와 카드 레이아웃은
+    # 동일하고 헤딩만 다르다.
+    build_destination_slides(
+        flow,
+        content_json.get("tour_spots", []),
+        section_title=content_json.get("tour_spots_heading"),
+        theme_line=None,
+    )
+    build_route_compare_slide(flow, content_json.get("route_compare"))
+    build_transport_slide(flow, content_json.get("transport_spec"))
+    build_experience_slide(
+        flow,
+        content_json.get("brand_tagline", ""),
+        content_json.get("experience_points"),
+    )
+    build_guide_slide(flow, content_json.get("guide_profile"))
+    # highlights/highlights_heading 필드는 제거됨 — why_reasons("포인트 0N" 섹션)와
+    # 지시문이 실질적으로 같은 "상품 차별점/테마 하이라이트" 내용을 요구해, AI가 같은
+    # 내용을 문구만 바꿔 두 번 반복하는 문제가 반복 발생했다(예: 멕시코 문명기행
+    # 테스트에서 "칸쿤 없이 완성하는 내륙 문명 루트" 등 4개 항목이 포인트 섹션과
+    # 하이라이트 섹션에 그대로 중복). 스키마에서 highlights를 없애 why_reasons
+    # 하나로 통일한다(build_highlights_slides 함수 자체는 향후 필요시를 위해 남겨둠).
+    build_season_slide(flow, content_json.get("season", {}), content_json.get("season_table"))
+    build_meal_slide(flow, content_json.get("meal_info"))
+    build_safety_slide(flow, content_json.get("altitude_profile"), content_json.get("safety_note"))
+    build_banner_request_slide(flow, cover, content_json.get("banner_copy"))
+    build_review_notes_slide(flow, review)
+    prs.save(out_path)
+    return prs
