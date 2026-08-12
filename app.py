@@ -166,7 +166,7 @@ if uploaded_files and st.button("생성하기", type="primary"):
                 with st.spinner(f"PPTX 조립 중...{tag}"):
                     path_suffix = f"_{version_label}" if version_label else ""
                     out_path = primary_path.replace(".docx", f"{path_suffix}_결과.pptx")
-                    if writer_style in ("정현지", "박소설", "신윤정"):
+                    if writer_style in ("정현지", "박소설", "신윤정", "최정인"):
                         # v2: 옛 기획안을 열어 덮어쓰지 않고, 매번 새로 슬라이드를 생성.
                         # review도 같이 넘겨서 검수 결과가 PPTX 마지막 페이지에도 남게
                         # 한다 — 예전엔 이 화면(Streamlit)에만 표시되고 다운로드한
