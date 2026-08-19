@@ -1,7 +1,9 @@
 """사업부 원본자료(docx/pptx/이미지) 파싱 모듈 — 2단계 계층 구조 지원"""
 import re
+import io
 import base64
 import mimetypes
+from PIL import Image, ImageOps
 from docx import Document
 from docx.table import Table
 from docx.text.paragraph import Paragraph
@@ -108,13 +110,36 @@ def parse_pptx(path):
     return result
 
 
-def encode_image_block(path):
+def encode_image_block(path, max_dimension=2000, jpeg_quality=85):
     """이미지 파일을 Claude API 멀티모달 메시지에 넣을 수 있는 형태로 base64 인코딩.
-    generator.py에서 텍스트 프롬프트와 함께 content 리스트에 섞어 보낸다."""
-    media_type = mimetypes.guess_type(path)[0] or "image/jpeg"
-    with open(path, "rb") as f:
-        data = base64.b64encode(f.read()).decode("utf-8")
+    generator.py에서 텍스트 프롬프트와 함께 content 리스트에 섞어 보낸다.
+
+    예전엔 원본 파일을 그대로 base64만 인코딩해서 보냈는데, 사업부에서 받은 옛
+    기획안 캡처 이미지 중 가로/세로 한 변이 8000px을 넘는 경우가 있어 Claude API가
+    "image dimensions exceed max allowed size: 8000 pixels" 오류로 요청 자체를
+    거부하는 문제가 있었다(상품 병합 케이스처럼 기존 상품소개 이미지를 원본
+    해상도 그대로 올리는 경우 특히 발생하기 쉬움). Pillow로 열어서 긴 변이
+    max_dimension(기본 2000px)을 넘으면 비율을 유지한 채 줄이고, 항상 JPEG로
+    다시 인코딩해서 media_type 불일치나 팔레트/투명 채널(RGBA, PNG 등) 문제도
+    함께 없앤다. 2000px면 API 하드 제한(8000px)에 여유가 크고, 이미지 속 텍스트
+    (기존 상품 설명 등)를 읽는 데도 지장이 없는 해상도다. 휴대폰으로 찍은 사진의
+    EXIF 방향 정보도 여기서 반영해 회전 문제를 방지한다."""
+    img = Image.open(path)
+    img = ImageOps.exif_transpose(img)  # 카메라 회전(EXIF Orientation) 그대로 반영
+    if img.mode not in ("RGB", "L"):
+        img = img.convert("RGB")  # RGBA/팔레트 모드는 JPEG로 저장 불가
+
+    width, height = img.size
+    longest_side = max(width, height)
+    if longest_side > max_dimension:
+        scale = max_dimension / longest_side
+        new_size = (max(1, round(width * scale)), max(1, round(height * scale)))
+        img = img.resize(new_size, Image.LANCZOS)
+
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=jpeg_quality)
+    data = base64.b64encode(buf.getvalue()).decode("utf-8")
     return {
         "type": "image",
-        "source": {"type": "base64", "media_type": media_type, "data": data},
+        "source": {"type": "base64", "media_type": "image/jpeg", "data": data},
     }
