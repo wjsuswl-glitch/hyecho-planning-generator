@@ -29,13 +29,48 @@ MUTED_COLOR = RGBColor(0x66, 0x66, 0x66)
 MARGIN = Inches(0.4)
 CONTENT_W = SLIDE_W - MARGIN * 2
 
+# ---- 모바일 최적화 기획안 전용 스타일 상수 ----
+# "모바일 최적화 콘텐츠 가이드라인_20260702.pdf"(마케팅실 최정인) + 실제 완성
+# 샘플(17.모바일최적화/기존이미지 vs 신규이미지, 돌로미테·그랜드서클 등) 대조로
+# 확인한 방향을 PPT 기획안 스케일로 반영한 값. 실제 최종 이미지는 1150px 폭
+# 기준 32pt 본문/22pt 최소 캡션/160~180% 줄간격/80~100px 여백을 쓰지만, 이
+# 앱의 산출물은 (디자이너가 참고해 최종 그래픽을 만드는) "기획안"이지 최종
+# 이미지 자체가 아니므로, 그 픽셀 스펙을 그대로 옮기는 대신 PC용 기존 폰트
+# 크기 대비 확대 비율로 환산해 적용한다. 실제 Before/After 대조 결과, 두
+# 버전의 텍스트 내용은 100% 동일하고 폰트/여백/배지 스타일/배경색만 달랐다
+# (요약·축약이 아니라 "재배치") — 그래서 스키마는 PC용과 동일한 걸 그대로
+# 쓰고, 이 스타일 상수 + build_mobile_* 함수들로 시각 표현만 바꾼다.
+MOBILE_BODY_SIZE = 16        # PC 본문 12pt -> 16pt
+MOBILE_CAPTION_SIZE = 13     # PC 캡션 10~11pt -> 13pt
+MOBILE_TITLE_SIZE = 19       # PC 소제목 14~15pt -> 19pt
+MOBILE_LINE_SPACING = 1.7    # 가이드라인 160~180% 구간의 중간값 — 실제 렌더링(add_text의
+                              # line_spacing 인자)에 이 값을 그대로 쓴다.
+MOBILE_LINE_SPACING_EST = 2.1  # estimate_text_height 전용 보정값. python-pptx/PowerPoint의
+                                # line_spacing(spcPct)은 "폰트 크기의 N배"가 아니라 "기본
+                                # 한 줄 간격(이미 폰트 크기보다 넉넉함, 이 파일 다른 곳의
+                                # 기본값 1.22가 그 기준)의 N배"로 적용된다 — 그래서 실제
+                                # 렌더링에 MOBILE_LINE_SPACING(1.7)을 쓰면 실제 줄 높이는
+                                # estimate_text_height(line_spacing=1.7)로 추정한 것보다 더
+                                # 크다. 모바일 카드 그리드(build_mobile_experience_slide)에서
+                                # 이 오차 때문에 텍스트가 카드 밖으로 넘치는 걸 실제 렌더링
+                                # 대조로 확인 후 보정(1.7*1.22≈2.07, 여유 포함 2.1로 반올림).
+MOBILE_BG_COLOR = RGBColor(0xEE, 0xF5, 0xF8)  # 완전 흰색 배경 대신 옅은 브랜드톤 배경
+                                                # (가이드라인: "플랫한 흰 배경 지양")
+MOBILE_BADGE_COLOR = RGBColor(0xE0, 0x7A, 0x3E)  # 배지(태그)용 강조색 — ACCENT_COLOR와
+                                                   # 구분되는 톤으로, 배지가 "포인트
+                                                   # 표시"라는 게 한눈에 보이게 한다
+MOBILE_CARD_COLOR = RGBColor(0xFF, 0xFF, 0xFF)    # 특별함 카드 배경(옅은 바탕 위 흰 카드)
 
-def _tf_setup(tf, text, size, color, bold=False, align=PP_ALIGN.LEFT, font=FONT_NAME):
+
+def _tf_setup(tf, text, size, color, bold=False, align=PP_ALIGN.LEFT, font=FONT_NAME,
+              line_spacing=None):
     tf.word_wrap = True
     lines = str(text).split("\n")
     tf.text = lines[0]
     p0 = tf.paragraphs[0]
     p0.alignment = align
+    if line_spacing is not None:
+        p0.line_spacing = line_spacing
     for run in p0.runs or [p0.add_run()]:
         run.font.size = Pt(size)
         run.font.bold = bold
@@ -45,6 +80,8 @@ def _tf_setup(tf, text, size, color, bold=False, align=PP_ALIGN.LEFT, font=FONT_
         p = tf.add_paragraph()
         p.text = line
         p.alignment = align
+        if line_spacing is not None:
+            p.line_spacing = line_spacing
         r = p.add_run() if not p.runs else p.runs[0]
         r.font.size = Pt(size)
         r.font.bold = bold
@@ -71,11 +108,11 @@ def estimate_text_height(text, size_pt, width_emu, line_spacing=1.22, bold=False
 
 
 def add_text(slide, left, top, width, height, text, size=14, color=TEXT_COLOR,
-             bold=False, align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.TOP):
+             bold=False, align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.TOP, line_spacing=None):
     box = slide.shapes.add_textbox(left, top, width, height)
     tf = box.text_frame
     tf.vertical_anchor = anchor
-    _tf_setup(tf, text, size, color, bold, align)
+    _tf_setup(tf, text, size, color, bold, align, line_spacing=line_spacing)
     return box
 
 
@@ -118,6 +155,51 @@ def add_group_bar(slide, top, text, height=None, size=13):
     tf.margin_right = Inches(0.15)
     _tf_setup(tf, text, size, WHITE, bold=True, align=PP_ALIGN.LEFT)
     return bar
+
+
+def add_slide_bg(slide, color=MOBILE_BG_COLOR):
+    """슬라이드 전체를 옅은 톤으로 채우는 배경 도형을 맨 뒤로 보내 깔아준다.
+    python-pptx는 slide.background로 그라데이션/이미지 배경을 직접 설정하기
+    까다로워서(테마 XML 조작 필요), 슬라이드 크기와 같은 사각형 도형을 하나
+    그려 맨 뒤로 보내는 방식을 쓴다 — 이후 add_text/add_image_placeholder 등이
+    이 위에 그대로 얹힌다."""
+    bg = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, SLIDE_W, SLIDE_H)
+    bg.fill.solid()
+    bg.fill.fore_color.rgb = color
+    bg.line.fill.background()
+    bg.shadow.inherit = False
+    spTree = slide.shapes._spTree
+    spTree.remove(bg._element)
+    spTree.insert(2, bg._element)  # spTree의 맨 앞(0,1은 nvGrpSpPr/grpSpPr)으로 보내 최하단에 깔기
+    return bg
+
+
+def badge_pill_width(text, size=13, bold=True):
+    """add_badge_pill이 그릴 알약형 배지의 폭을 텍스트 길이로 대략 추정한다
+    (estimate_text_height와 같은 글자폭 근사 방식 + 좌우 여백)."""
+    char_w_in = (size / 72) * (1.05 if bold else 0.95)
+    return Inches(len(str(text)) * char_w_in + 0.5)
+
+
+def add_badge_pill(slide, left, top, text, size=13, fill=MOBILE_BADGE_COLOR, text_color=WHITE,
+                    width=None):
+    """알약형(rounded) 배지 — 모바일 가이드라인의 "핵심 셀링포인트는 배지·인디케이터·
+    커스텀 아이콘으로 컴포넌트화" 요구를 반영한 헬퍼. 코스 섹션 위 짧은 태그
+    (예: "당일 산행으로 부담없이!")나 표지의 region_tag처럼, 평문이 아니라 눈에 띄는
+    태그로 보여주고 싶은 짧은 문구에 쓴다."""
+    if width is None:
+        width = badge_pill_width(text, size)
+    height = Inches(size / 72 * 1.9 + 0.14)
+    pill = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, left, top, width, height)
+    pill.fill.solid()
+    pill.fill.fore_color.rgb = fill
+    pill.line.fill.background()
+    tf = pill.text_frame
+    tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+    tf.margin_left = Inches(0.05)
+    tf.margin_right = Inches(0.05)
+    _tf_setup(tf, text, size, text_color, bold=True, align=PP_ALIGN.CENTER)
+    return pill, width, height
 
 
 def add_image_placeholder(slide, left, top, width, height, label="이미지"):
@@ -176,6 +258,19 @@ class SlideFlow:
         return self.y
 
 
+class MobileSlideFlow(SlideFlow):
+    """SlideFlow와 동일하지만, 새 슬라이드를 시작할 때마다 옅은 브랜드톤 배경을
+    자동으로 깔아준다(가이드라인: "플랫한 흰 배경 지양, 브랜드 톤 배경/텍스처/이미지
+    중첩 활용"). 배경만 다르고 페이지 흐름 로직(ensure 등)은 SlideFlow와 완전히
+    같아서, 기존 build_* 함수들을 그대로 재사용해도(예: build_route_compare_slide)
+    이 배경 위에 자연스럽게 얹힌다."""
+
+    def new_slide(self):
+        slide = super().new_slide()
+        add_slide_bg(slide)
+        return slide
+
+
 # ---------------------------------------------------------------------------
 # 슬라이드 빌더 함수 (정현지 스타일) — 모두 SlideFlow를 받아 가능하면 같은
 # 슬라이드에 이어 그리고, 공간이 없을 때만 새 슬라이드를 시작한다.
@@ -220,6 +315,56 @@ def build_cover_slide(flow, cover, watermark_label=""):
     y += intro_h
     if watermark_label:
         add_text(slide, SLIDE_W - Inches(1.5), Inches(0.15), Inches(1.1), Inches(0.3),
+                  watermark_label, size=11, bold=True, color=RGBColor(0xCC, 0xB0, 0x00),
+                  align=PP_ALIGN.RIGHT)
+    flow.y = y
+    return slide
+
+
+def build_mobile_cover_slide(flow, cover, watermark_label=""):
+    """모바일 버전 표지. build_cover_slide와 텍스트 구조·내용은 완전히 동일하고,
+    폰트를 키우고 여백을 넓히며(가이드라인 32pt 본문/80~100px 여백 취지), region_tag를
+    평문 대신 배지(add_badge_pill)로 컴포넌트화한 점만 다르다 — 실제 돌로미테 샘플도
+    표지 문구 자체는 PC/모바일이 동일했다."""
+    slide = flow.new_slide()
+    y = flow.y
+    tagline = cover.get("tagline", "")
+    tagline_h = estimate_text_height(tagline, MOBILE_CAPTION_SIZE, CONTENT_W,
+                                      line_spacing=MOBILE_LINE_SPACING_EST) if tagline else Inches(0.5)
+    add_text(slide, MARGIN, y, CONTENT_W, tagline_h, tagline,
+              size=MOBILE_CAPTION_SIZE, color=MUTED_COLOR, align=PP_ALIGN.CENTER,
+              line_spacing=MOBILE_LINE_SPACING)
+    y += tagline_h + Inches(0.08)
+
+    product_name = cover.get("product_name", "")
+    title_size = MOBILE_TITLE_SIZE + 8
+    product_h = estimate_text_height(product_name, title_size, CONTENT_W, bold=True) if product_name else Inches(1.0)
+    add_text(slide, MARGIN, y, CONTENT_W, product_h, product_name,
+              size=title_size, bold=True, align=PP_ALIGN.CENTER, color=ACCENT_COLOR)
+    y += product_h + Inches(0.12)
+
+    if cover.get("region_tag"):
+        pill_w = badge_pill_width(cover["region_tag"], size=MOBILE_CAPTION_SIZE)
+        pill_left = MARGIN + (CONTENT_W - pill_w) / 2
+        _, _, pill_h = add_badge_pill(
+            slide, pill_left, y, cover["region_tag"], size=MOBILE_CAPTION_SIZE, width=pill_w)
+        y += pill_h + Inches(0.14)
+    y += Inches(0.15)
+    add_small_image_placeholder(slide, y, Inches(2.7), Inches(1.1), "메인 이미지 (기존 이미지 재사용)")
+    y += Inches(1.2)
+    if cover.get("subtitle"):
+        subtitle_h = estimate_text_height(cover["subtitle"], MOBILE_TITLE_SIZE, CONTENT_W, bold=True)
+        add_text(slide, MARGIN, y, CONTENT_W, subtitle_h, cover["subtitle"],
+                  size=MOBILE_TITLE_SIZE, bold=True, align=PP_ALIGN.CENTER)
+        y += subtitle_h + Inches(0.08)
+    intro_h = estimate_text_height(cover.get("intro_copy", ""), MOBILE_BODY_SIZE, CONTENT_W,
+                                    line_spacing=MOBILE_LINE_SPACING_EST)
+    add_text(slide, MARGIN, y, CONTENT_W, intro_h, cover.get("intro_copy", ""),
+              size=MOBILE_BODY_SIZE, color=MUTED_COLOR, align=PP_ALIGN.CENTER,
+              line_spacing=MOBILE_LINE_SPACING)
+    y += intro_h
+    if watermark_label:
+        add_text(slide, SLIDE_W - Inches(1.6), Inches(0.15), Inches(1.2), Inches(0.3),
                   watermark_label, size=11, bold=True, color=RGBColor(0xCC, 0xB0, 0x00),
                   align=PP_ALIGN.RIGHT)
     flow.y = y
@@ -315,6 +460,87 @@ def build_destination_slides(flow, destinations, section_title=None, theme_line=
             add_text(slide, x, y, title_w, desc_h, dest.get("description", ""),
                       size=12, color=MUTED_COLOR)
             y += desc_h + Inches(0.18)
+
+            placed_any = True
+            idx += 1
+
+        flow.y = y
+        slides.append(slide)
+    return slides
+
+
+def build_mobile_destination_slides(flow, destinations, section_title=None, theme_line=None):
+    """build_destination_slides의 모바일 버전. 방문지 제목/설명 내용과 그룹핑 로직은
+    완전히 동일하게 재사용하고(원문 그대로 재배치이지 요약이 아니므로), 폰트만
+    MOBILE_* 크기로 키우고 줄간격을 넓힌다. section_title은 배지형이 아니라
+    기존과 같은 색 바(add_section_bar)를 유지한다 — 실제 샘플에서도 "돌로미테에서
+    놓쳐선 안되는 트레킹 코스 Best 6" 같은 대제목은 색 바 스타일 그대로였고,
+    그 위에 짧은 보조 태그("당일 산행으로 부담없이!")만 배지로 추가돼 있었다."""
+    if not destinations:
+        return []
+    slides = []
+    idx = 0
+    first_slide = True
+    header_h = (Inches(0.55) if section_title else Inches(0)) + \
+               (Inches(0.4) if theme_line else Inches(0))
+    current_group = None
+
+    while idx < len(destinations):
+        if first_slide:
+            y = flow.ensure(header_h + Inches(0.6))
+            slide = flow.slide
+            if section_title:
+                add_section_bar(slide, y, section_title, size=MOBILE_TITLE_SIZE - 2)
+                y += Inches(0.55)
+            if theme_line:
+                add_text(slide, MARGIN, y, CONTENT_W, Inches(0.35), theme_line,
+                          size=MOBILE_TITLE_SIZE - 3, bold=True, align=PP_ALIGN.CENTER)
+                y += Inches(0.4)
+            first_slide = False
+        else:
+            slide = flow.new_slide()
+            y = flow.y
+            if current_group:
+                bar_h = group_bar_height(current_group, size=MOBILE_CAPTION_SIZE + 1)
+                add_group_bar(slide, y, current_group, height=bar_h, size=MOBILE_CAPTION_SIZE + 1)
+                y += bar_h + Inches(0.15)
+
+        indent = Inches(0.15)
+        placed_any = False
+        while idx < len(destinations):
+            dest = destinations[idx]
+            group = dest.get("region_tag") or None
+            is_new_group = bool(group) and group != current_group
+            title_w = CONTENT_W - (indent if group else Inches(0))
+            title_size = MOBILE_TITLE_SIZE - 1
+            title_h = estimate_text_height(dest.get("title", ""), title_size, title_w, bold=True)
+            image_h = Inches(0.55)
+            desc_h = estimate_text_height(dest.get("description", ""), MOBILE_BODY_SIZE, title_w,
+                                           line_spacing=MOBILE_LINE_SPACING_EST)
+            group_label_h = Inches(0)
+            if is_new_group:
+                group_label_h = group_bar_height(group, size=MOBILE_CAPTION_SIZE + 1) + Inches(0.15)
+            block_h = group_label_h + title_h + Inches(0.08) + image_h + Inches(0.12) \
+                + desc_h + Inches(0.22)
+
+            if placed_any and y + block_h > flow.bottom_limit:
+                break
+
+            if is_new_group:
+                bar_h = group_label_h - Inches(0.15)
+                add_group_bar(slide, y, group, height=bar_h, size=MOBILE_CAPTION_SIZE + 1)
+                y += group_label_h
+                current_group = group
+
+            x = MARGIN + (indent if group else Inches(0))
+            add_text(slide, x, y, title_w, title_h, dest.get("title", ""),
+                      size=title_size, bold=True, color=ACCENT_COLOR)
+            y += title_h + Inches(0.08)
+            add_small_image_placeholder(slide, y, Inches(1.9), image_h, "이미지 (기존 이미지 재사용)")
+            y += image_h + Inches(0.12)
+            add_text(slide, x, y, title_w, desc_h, dest.get("description", ""),
+                      size=MOBILE_BODY_SIZE, color=MUTED_COLOR, line_spacing=MOBILE_LINE_SPACING)
+            y += desc_h + Inches(0.22)
 
             placed_any = True
             idx += 1
@@ -557,6 +783,78 @@ def build_experience_slide(flow, brand_tagline, experience_points):
     return slide
 
 
+def build_mobile_experience_slide(flow, brand_tagline, experience_points):
+    """모바일 버전 "특별함" 카드 섹션. PC 버전(build_experience_slide)은 항목 수만큼
+    한 줄에 나란히 배치하는데(예: 5개면 5열), 실제 돌로미테 샘플을 보면 모바일에서는
+    한 줄에 최대 3개까지만 두고(5개면 3+2), 아이콘·카드를 훨씬 크게 키우며, 흰
+    배경(MOBILE_BG_COLOR로 깔린 옅은 톤 위) 카드로 구획을 나눠 "컴포넌트화"한다.
+    텍스트 내용(title/description)은 PC와 동일 — 배치/크기만 바뀐다."""
+    if not brand_tagline and not experience_points:
+        return None
+    tagline_h = estimate_text_height(brand_tagline, MOBILE_TITLE_SIZE, CONTENT_W, bold=True) \
+        if brand_tagline else Inches(0)
+
+    MAX_COLS = 3
+    points = experience_points or []
+    rows = [points[i:i + MAX_COLS] for i in range(0, len(points), MAX_COLS)] if points else []
+
+    gap = Inches(0.12)
+    icon_h = Inches(0.75)
+
+    def _row_height(row):
+        col_w = CONTENT_W / len(row) - gap
+        text_w = col_w - Inches(0.2)  # add_text가 실제로 쓰는 폭(카드 좌우 0.1in 여백 뺀 값)과
+                                        # 반드시 같아야 함 — 안 그러면 추정 높이가 실제보다 좁은
+                                        # 폭 기준 줄바꿈보다 작게 나와 텍스트가 카드 밖으로 넘친다.
+        title_h = max(estimate_text_height(ep.get("title", ""), MOBILE_CAPTION_SIZE + 1, text_w,
+                                            bold=True) for ep in row)
+        desc_h = max(estimate_text_height(ep.get("description", ""), MOBILE_CAPTION_SIZE, text_w,
+                                           line_spacing=MOBILE_LINE_SPACING_EST) for ep in row)
+        return Inches(0.15) + icon_h + Inches(0.1) + title_h + Inches(0.06) + desc_h + Inches(0.15), title_h, desc_h
+
+    row_metrics = [_row_height(row) for row in rows]
+    total_h = (tagline_h + Inches(0.2) if brand_tagline else Inches(0)) \
+        + sum(rh for rh, _, _ in row_metrics) + Inches(0.1) * max(len(rows) - 1, 0)
+
+    y = flow.ensure(total_h)
+    slide = flow.slide
+    if brand_tagline:
+        add_text(slide, MARGIN, y, CONTENT_W, tagline_h, brand_tagline, size=MOBILE_TITLE_SIZE,
+                  bold=True, align=PP_ALIGN.CENTER, color=ACCENT_COLOR)
+        y += tagline_h + Inches(0.2)
+
+    for row, (row_h, title_h, desc_h) in zip(rows, row_metrics):
+        col_w = CONTENT_W / len(row) - gap
+        for i, ep in enumerate(row):
+            x = MARGIN + (col_w + gap) * i
+            card = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, x, y, col_w, row_h)
+            card.fill.solid()
+            card.fill.fore_color.rgb = MOBILE_CARD_COLOR
+            card.line.color.rgb = RGBColor(0xDD, 0xE6, 0xEA)
+            card.shadow.inherit = False
+            card.text_frame.word_wrap = True
+            card.text_frame.margin_top = Inches(0.1)
+        for i, ep in enumerate(row):
+            x = MARGIN + (col_w + gap) * i
+            add_image_placeholder(slide, x + Inches(0.1), y + Inches(0.15), col_w - Inches(0.2),
+                                   icon_h, "아이콘")
+        cy = y + Inches(0.15) + icon_h + Inches(0.1)
+        for i, ep in enumerate(row):
+            x = MARGIN + (col_w + gap) * i
+            add_text(slide, x + Inches(0.1), cy, col_w - Inches(0.2), title_h, ep.get("title", ""),
+                      size=MOBILE_CAPTION_SIZE + 1, bold=True, align=PP_ALIGN.CENTER)
+        cy += title_h + Inches(0.06)
+        for i, ep in enumerate(row):
+            x = MARGIN + (col_w + gap) * i
+            add_text(slide, x + Inches(0.1), cy, col_w - Inches(0.2), desc_h, ep.get("description", ""),
+                      size=MOBILE_CAPTION_SIZE, color=MUTED_COLOR, align=PP_ALIGN.CENTER,
+                      line_spacing=MOBILE_LINE_SPACING)
+        y += row_h + Inches(0.1)
+
+    flow.y = y
+    return slide
+
+
 def build_highlights_slides(flow, highlights, heading=None):
     """번호 매긴 여정 하이라이트 카드 (destinations와 별개 — 더 큰 테마 단위)"""
     if not highlights:
@@ -699,6 +997,55 @@ def build_safety_slide(flow, altitude_profile, safety_note):
             x = MARGIN + col_w * i
             add_text(slide, x + gap, y, col_w - gap * 2, label_h, label, size=9, align=PP_ALIGN.CENTER)
         y += label_h
+    flow.y = y
+    return slide
+
+
+def build_mobile_qna_slide(flow, qna_pairs, heading="궁금증을 풀어드려요"):
+    """meal_info/safety_note(각각 question/answer 한 쌍)를 모바일 버전에서는
+    돌로미테 샘플의 "돌로미테 트레킹에 대한 궁금증을 풀어드려요!" 섹션처럼 아이콘
+    카드형 Q&A 리스트로 묶어서 보여준다. PC 버전은 이 둘을 각각 별도 섹션(question
+    문장을 큰 소제목처럼)으로 보여주는데, 실제 샘플은 여러 Q&A를 카드 리스트 하나로
+    묶어 보여줘서 그 구조를 따른다 — question/answer 텍스트 내용 자체는 그대로 둔다."""
+    qna_pairs = [qa for qa in (qna_pairs or []) if qa and qa.get("question")]
+    if not qna_pairs:
+        return None
+    header_h = Inches(0.55)
+    tw = CONTENT_W - Inches(1.0)
+
+    def _card_height(qa):
+        q_h = estimate_text_height(qa["question"], MOBILE_CAPTION_SIZE + 2, tw, bold=True)
+        a_h = estimate_text_height(qa.get("answer", ""), MOBILE_BODY_SIZE, tw,
+                                    line_spacing=MOBILE_LINE_SPACING_EST)
+        return Inches(0.2) + q_h + Inches(0.06) + a_h + Inches(0.2), q_h, a_h
+
+    card_metrics = [_card_height(qa) for qa in qna_pairs]
+    # 헤더만 그려놓고 카드 첫 개도 못 들어갈 자리에서 끝나면(예전 버그) 소제목이
+    # 다음 슬라이드의 카드들과 떨어져 혼자 남는다 — 헤더 + 첫 카드 높이를 함께
+    # 확보해야 헤더가 반드시 카드 하나 이상과 같은 슬라이드에 붙는다.
+    y = flow.ensure(header_h + Inches(0.1) + card_metrics[0][0])
+    slide = flow.slide
+    add_section_bar(slide, y, heading, size=MOBILE_TITLE_SIZE - 2)
+    y += header_h + Inches(0.1)
+
+    for qa, (card_h, q_h, a_h) in zip(qna_pairs, card_metrics):
+        if y + card_h > flow.bottom_limit:
+            slide = flow.new_slide()
+            y = flow.y
+        card = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, MARGIN, y, CONTENT_W, card_h)
+        card.fill.solid()
+        card.fill.fore_color.rgb = MOBILE_CARD_COLOR
+        card.line.color.rgb = RGBColor(0xDD, 0xE6, 0xEA)
+        card.shadow.inherit = False
+        add_image_placeholder(slide, MARGIN + Inches(0.15), y + Inches(0.2), Inches(0.55),
+                               Inches(0.55), "아이콘")
+        tx = MARGIN + Inches(0.85)
+        add_text(slide, tx, y + Inches(0.2), tw, q_h, qa["question"], size=MOBILE_CAPTION_SIZE + 2,
+                  bold=True, color=ACCENT_COLOR)
+        add_text(slide, tx, y + Inches(0.2) + q_h + Inches(0.06), tw, a_h, qa.get("answer", ""),
+                  size=MOBILE_BODY_SIZE, color=MUTED_COLOR, line_spacing=MOBILE_LINE_SPACING)
+        y += card_h + Inches(0.15)
+
     flow.y = y
     return slide
 
@@ -891,6 +1238,61 @@ def build(content_json, out_path, review=None):
     build_season_slide(flow, content_json.get("season", {}), content_json.get("season_table"))
     build_meal_slide(flow, content_json.get("meal_info"))
     build_safety_slide(flow, content_json.get("altitude_profile"), content_json.get("safety_note"))
+    build_banner_request_slide(flow, cover, content_json.get("banner_copy"))
+    build_review_notes_slide(flow, review)
+    prs.save(out_path)
+    return prs
+
+
+def build_mobile(content_json, out_path, review=None):
+    """모바일 최적화 기획안 빌더. content_json은 build()과 완전히 같은 "정현지
+    스키마"를 그대로 받는다 — 새 스키마를 만들지 않은 이유는, 실제 회사 가이드라인
+    (모바일 최적화 콘텐츠 가이드라인_20260702.pdf)과 실제 완성 Before/After 샘플
+    (17.모바일최적화 폴더, 돌로미테·그랜드서클 등)을 대조해본 결과 모바일 버전은
+    PC 버전과 텍스트 내용이 100% 동일하고 폰트 크기·여백·배지(태그) 스타일·배경색만
+    달랐기 때문이다 — "축약/요약"이 아니라 "재배치". 그래서 콘텐츠 스키마는
+    재사용하고, 시각 표현만 build_mobile_* 함수들로 갈아끼운다.
+
+    1차 버전 범위: 실제 샘플에서 PC 대비 가장 뚜렷하게 스타일이 바뀌어 있던 4개
+    섹션(표지, 특별함 카드, 방문지/투어스팟, Q&A)만 모바일 전용 함수로 새로 그린다.
+    나머지 섹션(노선비교/교통정보/가이드소개 등)은 실제 샘플에 대응 사례가 없어
+    확인이 안 되므로, 1차 버전에서는 PC용 함수를 그대로 재사용한다(MobileSlideFlow가
+    깔아주는 배경 위에 얹히긴 하지만, 폰트 크기는 PC 그대로 나온다는 뜻 — 필요하면
+    다음 라운드에서 같은 패턴으로 확장 가능)."""
+    prs = Presentation()
+    prs.slide_width = SLIDE_W
+    prs.slide_height = SLIDE_H
+    flow = MobileSlideFlow(prs)
+
+    cover = content_json.get("cover", {})
+    build_mobile_cover_slide(flow, cover, content_json.get("watermark_label", ""))
+    build_background_slide(flow, content_json.get("background_story"))
+    build_reasons_slide(flow, content_json.get("why_reasons"), product_name=cover.get("product_name", ""))
+    build_mobile_destination_slides(
+        flow,
+        content_json.get("destinations", []),
+        section_title=content_json.get("destinations_heading"),
+    )
+    build_mobile_destination_slides(
+        flow,
+        content_json.get("tour_spots", []),
+        section_title=content_json.get("tour_spots_heading"),
+    )
+    build_route_compare_slide(flow, content_json.get("route_compare"))
+    build_transport_slide(flow, content_json.get("transport_spec"))
+    build_mobile_experience_slide(
+        flow,
+        content_json.get("brand_tagline", ""),
+        content_json.get("experience_points"),
+    )
+    build_guide_slide(flow, content_json.get("guide_profile"))
+    build_season_slide(flow, content_json.get("season", {}), content_json.get("season_table"))
+    # altitude_profile(고도 프로필)은 safety_note 없이 build_safety_slide로 그대로
+    # 그리고, meal_info/safety_note의 question/answer는 build_mobile_qna_slide로
+    # 묶어서 카드 리스트로 재배치한다(실제 샘플의 "궁금증을 풀어드려요" 섹션과 동일한 구조).
+    build_safety_slide(flow, content_json.get("altitude_profile"), None)
+    qna_pairs = [content_json.get("meal_info"), content_json.get("safety_note")]
+    build_mobile_qna_slide(flow, qna_pairs)
     build_banner_request_slide(flow, cover, content_json.get("banner_copy"))
     build_review_notes_slide(flow, review)
     prs.save(out_path)
