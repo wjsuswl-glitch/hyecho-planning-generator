@@ -110,24 +110,74 @@ def parse_pptx(path):
     return result
 
 
-def encode_image_block(path, max_dimension=2000, jpeg_quality=85):
-    """이미지 파일을 Claude API 멀티모달 메시지에 넣을 수 있는 형태로 base64 인코딩.
-    generator.py에서 텍스트 프롬프트와 함께 content 리스트에 섞어 보낸다.
+def _to_jpeg_block(img, jpeg_quality):
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=jpeg_quality)
+    data = base64.b64encode(buf.getvalue()).decode("utf-8")
+    return {
+        "type": "image",
+        "source": {"type": "base64", "media_type": "image/jpeg", "data": data},
+    }
 
-    예전엔 원본 파일을 그대로 base64만 인코딩해서 보냈는데, 사업부에서 받은 옛
-    기획안 캡처 이미지 중 가로/세로 한 변이 8000px을 넘는 경우가 있어 Claude API가
-    "image dimensions exceed max allowed size: 8000 pixels" 오류로 요청 자체를
-    거부하는 문제가 있었다(상품 병합 케이스처럼 기존 상품소개 이미지를 원본
-    해상도 그대로 올리는 경우 특히 발생하기 쉬움). Pillow로 열어서 긴 변이
-    max_dimension(기본 2000px)을 넘으면 비율을 유지한 채 줄이고, 항상 JPEG로
-    다시 인코딩해서 media_type 불일치나 팔레트/투명 채널(RGBA, PNG 등) 문제도
-    함께 없앤다. 2000px면 API 하드 제한(8000px)에 여유가 크고, 이미지 속 텍스트
-    (기존 상품 설명 등)를 읽는 데도 지장이 없는 해상도다. 휴대폰으로 찍은 사진의
-    EXIF 방향 정보도 여기서 반영해 회전 문제를 방지한다."""
+
+def encode_image_blocks(path, max_side=1568, jpeg_quality=90):
+    """이미지 파일 1개를 Claude API 멀티모달 블록 '목록'(리스트, 1개 이상)으로 변환.
+
+    [2026-09-15 수정 배경] 예전엔 encode_image_block(단수)에서 긴 변이 2000px을
+    넘으면 그 긴 변 기준으로 통째로 축소했다. 그런데 모바일 최적화 기능 실사용
+    테스트(미서부 대장정, 유럽 알프스 3대 미봉 상품)에서 실제로 항목이 통째로
+    누락되는 문제가 발견됐고, 원인을 추적해보니 이 축소 방식이 범인이었다 —
+    사업부 상품소개 이미지는 보통 가로 1150px 안팎에 세로만 아주 긴(예:
+    12,000px) "세로 스크롤 카드뉴스" 형태인데, 세로(긴 변) 기준으로 1568px까지
+    줄이면 비율 유지 때문에 가로가 150px 밑으로 줄어버려 글자가 다 뭉개진다.
+    가로가 원래 읽기 좋았던 폭인데 세로가 길다고 가로까지 함께 줄여버리는 게
+    문제였던 것 — 그 결과 이미지 아래쪽에 있던 내용(예: "몬테로사" 구간
+    전체)을 AI가 아예 읽지 못하고 건너뛰었다.
+
+    게다가 Claude API 쪽에서도 이미지를 표준 해상도 등급 기준 긴 변
+    1568px(Sonnet 계열 기준)로 자체 축소해서 처리하므로, 애초에 세로로 아주 긴
+    이미지를 한 장으로 보내면 이 API 자체 축소에서도 똑같이 가로가 뭉개진다 —
+    그래서 축소가 아니라 "분할"이 정답이다. 세로가 max_side를 넘으면 가로/원본
+    해상도는 그대로 유지한 채 세로 방향으로 max_side 높이씩 여러 장으로 잘라
+    각각을 별도 이미지 블록으로 만든다 — Anthropic 공식 가이드도 긴 이미지는
+    축소보다 "여러 장의 이미지로 순서대로 전달"하는 방식을 권장한다.
+
+    가로가 max_side보다 큰 경우(드묾)는 먼저 가로 기준으로 비율 유지 축소한
+    뒤 위 분할 로직을 적용한다. 항상 JPEG로 재인코딩해서 media_type 불일치나
+    팔레트/투명 채널(RGBA, PNG 등) 문제도 없앤다. 휴대폰으로 찍은 사진의 EXIF
+    방향 정보도 여기서 반영해 회전 문제를 방지한다."""
     img = Image.open(path)
-    img = ImageOps.exif_transpose(img)  # 카메라 회전(EXIF Orientation) 그대로 반영
+    img = ImageOps.exif_transpose(img)
     if img.mode not in ("RGB", "L"):
-        img = img.convert("RGB")  # RGBA/팔레트 모드는 JPEG로 저장 불가
+        img = img.convert("RGB")
+
+    width, height = img.size
+    if width > max_side:
+        scale = max_side / width
+        width, height = max(1, round(width * scale)), max(1, round(height * scale))
+        img = img.resize((width, height), Image.LANCZOS)
+
+    if height <= max_side:
+        pieces = [img]
+    else:
+        n_slices = -(-height // max_side)  # ceil — 조각 개수
+        slice_h = -(-height // n_slices)   # 조각당 높이(마지막 조각만 더 짧을 수 있음)
+        pieces = [img.crop((0, top, width, min(top + slice_h, height)))
+                  for top in range(0, height, slice_h)]
+
+    return [_to_jpeg_block(piece, jpeg_quality) for piece in pieces]
+
+
+def encode_image_block(path, max_dimension=2000, jpeg_quality=85):
+    """하위 호환용 — 이미지 1장을 블록 1개로만 반환(분할 없이 긴 변 기준 축소).
+    세로로 긴 카드뉴스형 상품소개 이미지에는 encode_image_blocks(복수형)를
+    쓸 것 — 이 함수처럼 긴 변 기준으로 축소하면 세로가 아주 긴 이미지에서
+    가로(글자가 실제로 놓인 폭)가 함께 뭉개지는 문제가 있다(위 encode_image_blocks
+    설명 참고). 이 함수는 다른 코드에서 참조할 경우를 대비해서만 남겨둔다."""
+    img = Image.open(path)
+    img = ImageOps.exif_transpose(img)
+    if img.mode not in ("RGB", "L"):
+        img = img.convert("RGB")
 
     width, height = img.size
     longest_side = max(width, height)
@@ -136,10 +186,4 @@ def encode_image_block(path, max_dimension=2000, jpeg_quality=85):
         new_size = (max(1, round(width * scale)), max(1, round(height * scale)))
         img = img.resize(new_size, Image.LANCZOS)
 
-    buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=jpeg_quality)
-    data = base64.b64encode(buf.getvalue()).decode("utf-8")
-    return {
-        "type": "image",
-        "source": {"type": "base64", "media_type": "image/jpeg", "data": data},
-    }
+    return _to_jpeg_block(img, jpeg_quality)
