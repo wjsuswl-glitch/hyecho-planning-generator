@@ -215,6 +215,40 @@ DESTINATIONS_RULE = (
     "부족한 슬롯은 조립 단계에서 자동으로 삭제됩니다."
 )
 
+# 카테고리별 금지 표현 — 특정 기획자 문체(STYLE_RULES)가 아니라 회사 전체의 브랜드
+# 철학에서 나온 규칙이라 writer_style과 무관하게 항상 적용된다. (writer_style,
+# reason) 형태가 아니라 카테고리 단위로만 구분하는 이유: 담당자가 "트레킹 상품
+# 전체에" 적용해달라고 했기 때문 — 특정 기획자 한 명의 문체 취향이 아니다.
+#
+# 2026-09-15: "트레킹 상품소개에서는 '완전정복'을 쓰면 안 된다 — 산은 정복하는
+# 대상이 아니라 함께하며 오르는 대상이기 때문" — 실제로 모바일 최적화 테스트
+# (유럽 알프스 상품)에서 "알프스 완전정복"이라는 표현이 나온 걸 계기로 지적받음.
+BRAND_WORD_BANS = {
+    "트레킹": [
+        {
+            "words": ["완전정복", "정복"],
+            "reason": "산은 정복하는 대상이 아니라 함께하며 오르는 대상이라는 브랜드 철학. "
+                      "'정복하다/정복' 뉘앙스의 표현(완전정복, ~산 정복 등)은 어디에도 쓰지 않는다.",
+            "alternative": "대신 '함께 걷다', '함께 오르다', '만나다', '담다', '완주하다'처럼 "
+                           "산과 나란히 하는 뉘앙스의 표현을 쓴다.",
+        },
+    ],
+}
+
+
+def brand_word_ban_instruction(category):
+    """카테고리에 해당하는 금지 표현 규칙을 프롬프트에 넣을 텍스트로 만든다.
+    해당 카테고리에 규칙이 없으면 빈 문자열(프롬프트에 아무것도 추가하지 않음)."""
+    rules = BRAND_WORD_BANS.get(_nfc(category), [])
+    if not rules:
+        return ""
+    lines = ["[금지 표현 — 브랜드 톤 규칙, 특정 기획자 스타일과 무관하게 항상 적용]"]
+    for rule in rules:
+        words = "/".join(rule["words"])
+        lines.append(f"- \"{words}\" 계열 표현은 절대 쓰지 마세요. 이유: {rule['reason']}")
+        lines.append(f"  {rule['alternative']}")
+    return "\n".join(lines)
+
 def load_fewshot_examples(writer_style, category, k=3):
     with open(FEWSHOT_PATH, encoding="utf-8") as f:
         all_examples = json.load(f)
@@ -265,6 +299,8 @@ def build_system_prompt(writer_style, category, parsed_sections, format_info, ha
 
 [스타일 규칙]
 {STYLE_RULES[writer_style]}
+
+{brand_word_ban_instruction(category)}
 
 [레이아웃 규칙]
 why_reasons와 season 섹션은 {"같은 슬라이드에 합쳐서" if LAYOUT_HINT[writer_style]=="combined" else "별도 슬라이드로 나눠서"} 구성하세요.
@@ -476,6 +512,9 @@ Best 6"). 이 시스템은 그 줄바꿈을 배지 스타일로 렌더링합니�
 원문 문체(정현지/최정인 등 특정 기획자 스타일)를 새로 입히지 말고, 이미지에 쓰인
 내용을 담백하게 정리하세요. 문장을 축약할 땐 과장이나 새로운 수식어를 더하지
 말고, 원본에 있던 사실만으로 간결하게 쓰세요.
+
+{brand_word_ban_instruction(category)}
+{"위 금지 표현은 원본 이미지에 그 표현이 실제로 그대로 쓰여 있어도 예외 없이 적용됩니다 — 원문을 옮기는 작업이라도 금지 표현이 보이면 위에 제시된 대안 표현으로 바꿔서 옮기세요. 이건 원칙 2(문장 정돈)의 범위이지, 원칙 1이 금지하는 '항목 삭제'가 아닙니다." if brand_word_ban_instruction(category) else ""}
 
 카테고리: {category}
 
