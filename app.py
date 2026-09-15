@@ -3,7 +3,7 @@ import streamlit as st
 import tempfile, os, json, sys, unicodedata
 
 sys.path.insert(0, os.path.dirname(__file__))
-from parser import parse_docx, detect_format_and_draft_copy, parse_pptx, encode_image_block
+from parser import parse_docx, detect_format_and_draft_copy, parse_pptx, encode_image_blocks
 from prompt_builder import build_system_prompt, build_mobile_system_prompt
 from generator import generate_content
 from reviewer import review_content
@@ -11,6 +11,30 @@ from assembler import assemble
 import builder as dynamic_builder
 
 TEMPLATE_MAP_PATH = os.path.join(os.path.dirname(__file__), "template_map.json")
+
+
+def build_multimodal_image_blocks(image_files):
+    """업로드된 이미지 파일들을 Claude API에 보낼 이미지 블록 목록으로 변환한다.
+
+    encode_image_blocks(parser.py)가 세로로 아주 긴 이미지 1장을 여러 조각으로
+    나눠서 반환할 수 있으므로(2026-09-15 수정 — "몬테로사" 구간 전체가 통째로
+    누락되는 문제의 원인이었음, parser.py의 encode_image_blocks 설명 참고), 한
+    파일이 여러 조각으로 나뉘면 그 앞에 "이 조각들은 원래 한 이미지가 이어지는
+    부분"이라는 걸 AI가 알 수 있도록 안내 텍스트 블록을 하나 끼워 넣는다 —
+    Anthropic이 권장하는 "여러 이미지에 순서 라벨을 붙여 전달" 방식이다."""
+    blocks = []
+    for idx, (name, path) in enumerate(image_files, 1):
+        slices = encode_image_blocks(path)
+        if len(slices) > 1:
+            blocks.append({
+                "type": "text",
+                "text": f"[첨부 이미지 {idx}: {name} — 세로로 길어서 위에서 아래로 "
+                        f"{len(slices)}개 조각으로 나눠 전달합니다. 아래 이미지 "
+                        f"{len(slices)}장은 서로 잘린 게 아니라 이어지는 한 페이지이니, "
+                        f"순서대로 이어서 하나의 내용으로 읽어주세요.]",
+            })
+        blocks.extend(slices)
+    return blocks
 
 st.set_page_config(page_title="혜초 기획안 자동생성", page_icon="🧳")
 st.title("🧳 혜초여행 기획안 자동생성")
@@ -110,8 +134,10 @@ if uploaded_files and st.button("생성하기", type="primary"):
         primary_path = tmp_paths[0]
         sections, format_info = {}, {}
         with st.spinner("이미지 확인 중..."):
-            image_blocks = [encode_image_block(path) for _, path in image_files]
-        st.success(f"이미지 {len(image_blocks)}장 확인 완료 — 모바일 최적화 기획안으로 재배치합니다.")
+            image_blocks = build_multimodal_image_blocks(image_files)
+        img_count = sum(1 for b in image_blocks if b.get("type") == "image")
+        st.success(f"이미지 확인 완료(원본 {len(image_files)}개 → 전송 {img_count}조각) — "
+                   f"모바일 최적화 기획안으로 재배치합니다.")
         with st.spinner("프롬프트 조립 중..."):
             prompt = build_mobile_system_prompt(category)
     else:
@@ -136,7 +162,7 @@ if uploaded_files and st.button("생성하기", type="primary"):
                 for k, v in extra.items():
                     sections[f"[추가자료: {name}] {k}"] = v
 
-            image_blocks = [encode_image_block(path) for _, path in image_files]
+            image_blocks = build_multimodal_image_blocks(image_files)
 
         extra_count = len(docx_files) - 1 + len(pptx_files) + len(image_files)
         st.success(
