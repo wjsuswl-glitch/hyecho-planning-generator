@@ -42,7 +42,7 @@ BANNER_MAP_INCLUDE = {"박소설": True, "신윤정": True, "정현지": False, 
 # 필드를 추가/삭제할 땐 반드시 template_map.json도 같이 바꿀 것.
 SCHEMA_HINTS = {
     "정현지": """{
-  "cover": {"tagline": str, "product_name": str, "region_tag": str, "subtitle": str, "intro_copy": str},
+  "cover": {"tagline": str, "tagline_options": [str, str, str], "product_name": str, "region_tag": str, "subtitle": str, "subtitle_options": [str, str, str], "intro_copy": str},
   "watermark_label": str,
   "product_variant_type": str,
   "background_story": {"title": str, "content": str},
@@ -295,6 +295,18 @@ def build_system_prompt(writer_style, category, parsed_sections, format_info, ha
             f"재료로 삼아 {writer_style}의 문체로 2줄 태그라인을 새로 창작하세요."
         )
 
+    cover_options_instruction = (
+        "[표지 후보안 — tagline_options / subtitle_options]\n"
+        "cover.tagline_options와 cover.subtitle_options에는 각각 서로 다른 표현의 후보안을 "
+        "정확히 3개씩 배열로 담당자에게 보여주세요(담당자가 그중 하나를 골라 쓸 수 있도록). "
+        "3개는 같은 말을 살짝 바꾼 수준이 아니라 톤/각도가 서로 구별되게 만드세요(예: "
+        "감성적인 안 / 정보 중심 안 / 임팩트 있는 안). 그리고 cover.tagline과 cover.subtitle "
+        "(단수 필드)에는 반드시 그 3개 중 가장 추천하는 안, 즉 tagline_options[0]/"
+        "subtitle_options[0]과 완전히 동일한 문장을 넣으세요 — 이 단수 필드는 다른 슬라이드 "
+        "(배너 문구 등)에서 대표 카피로 그대로 재사용되므로 options 배열과 반드시 일치해야 "
+        "합니다."
+    )
+
     prompt = f"""역할: 당신은 혜초여행사 콘텐츠팀의 {writer_style} 기획자입니다.
 
 [스타일 규칙]
@@ -322,6 +334,8 @@ web_search 도구를 사용할 수 있습니다. 사업부 자료에 없는 배�
 이 문구들을 쓰지 마세요 (역할이 다릅니다 — 위 experience_points/why_reasons 설명 참고).
 
 {copy_instruction}
+
+{cover_options_instruction}
 
 [버전 분기 판단 — 대부분의 상품엔 해당 없음]
 사업부 자료 안에 "봄 버전과 가을 버전으로 2개로 해주세요"처럼, 계절이나 시기에 따라
@@ -515,6 +529,12 @@ Best 6"). 이 시스템은 그 줄바꿈을 배지 스타일로 렌더링합니�
 
 {brand_word_ban_instruction(category)}
 {"위 금지 표현은 원본 이미지에 그 표현이 실제로 그대로 쓰여 있어도 예외 없이 적용됩니다 — 원문을 옮기는 작업이라도 금지 표현이 보이면 위에 제시된 대안 표현으로 바꿔서 옮기세요. 이건 원칙 2(문장 정돈)의 범위이지, 원칙 1이 금지하는 '항목 삭제'가 아닙니다." if brand_word_ban_instruction(category) else ""}
+
+[표지 후보안 필드 — cover.tagline_options / cover.subtitle_options]
+이 작업은 새 카피를 창작하는 게 아니라 기존 이미지 내용을 그대로 옮기는 작업이므로,
+tagline_options/subtitle_options는 여러 안을 새로 만들지 말고 빈 배열 [] 로 두세요.
+cover.tagline/cover.subtitle(단수 필드)에만 이미지에 있는 문구를 그대로(또는 위
+[절대 원칙 2]에 따라 간결하게 정리해서) 채우면 됩니다.
 
 카테고리: {category}
 
