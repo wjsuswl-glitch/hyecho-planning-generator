@@ -276,6 +276,25 @@ class MobileSlideFlow(SlideFlow):
 # 슬라이드에 이어 그리고, 공간이 없을 때만 새 슬라이드를 시작한다.
 # ---------------------------------------------------------------------------
 
+def cover_option_text(cover, options_key, single_key):
+    """표지 후보안(tagline_options/subtitle_options) 렌더링용 텍스트를 만든다.
+
+    2026-09-15 추가 — 담당자 요청: "신규 상품소개 제작에서 타이틀의 태그라인 등은
+    기획안 안에서도 몇 가지 안을 만들어서 보여줬으면 좋겠다(3가지 안)". AI가
+    tagline_options/subtitle_options(각 3개짜리 배열)를 채워주면 "안1) ...\\n안2)
+    ...\\n안3) ..." 형태로 표지에 나란히 보여주고, 그 필드가 없으면(예: 모바일
+    최적화 모드처럼 새 카피를 만들지 않고 원본을 그대로 옮기기만 하는 경우) 예전
+    그대로 단일 값(tagline/subtitle)을 보여준다 — 완전히 하위 호환."""
+    options = cover.get(options_key)
+    if isinstance(options, list):
+        options = [str(o).strip() for o in options if str(o).strip()]
+    else:
+        options = []
+    if len(options) >= 2:
+        return "\n".join(f"안{i + 1}) {opt}" for i, opt in enumerate(options))
+    return cover.get(single_key, "")
+
+
 def build_cover_slide(flow, cover, watermark_label=""):
     """표지 슬라이드. tagline/product_name/subtitle 모두 고정 높이를 확보해두고
     있었는데, 이 셋 다 AI가 채우는 가변 길이 텍스트라 길어지면 예상보다 줄바꿈이
@@ -284,7 +303,7 @@ def build_cover_slide(flow, cover, watermark_label=""):
     크다). estimate_text_height로 실제 줄 수를 추정해 안전하게 확보한다."""
     slide = flow.new_slide()
     y = flow.y
-    tagline = cover.get("tagline", "")
+    tagline = cover_option_text(cover, "tagline_options", "tagline")
     tagline_h = estimate_text_height(tagline, 13, CONTENT_W) if tagline else Inches(0.5)
     add_text(slide, MARGIN, y, CONTENT_W, tagline_h, tagline,
               size=13, color=MUTED_COLOR, align=PP_ALIGN.CENTER)
@@ -304,9 +323,10 @@ def build_cover_slide(flow, cover, watermark_label=""):
     y += Inches(0.1)
     add_small_image_placeholder(slide, y, Inches(2.3), Inches(0.9), "메인 이미지")
     y += Inches(1.0)
-    if cover.get("subtitle"):
-        subtitle_h = estimate_text_height(cover["subtitle"], 14, CONTENT_W, bold=True)
-        add_text(slide, MARGIN, y, CONTENT_W, subtitle_h, cover["subtitle"],
+    subtitle = cover_option_text(cover, "subtitle_options", "subtitle")
+    if subtitle:
+        subtitle_h = estimate_text_height(subtitle, 14, CONTENT_W, bold=True)
+        add_text(slide, MARGIN, y, CONTENT_W, subtitle_h, subtitle,
                   size=14, bold=True, align=PP_ALIGN.CENTER)
         y += subtitle_h + Inches(0.05)
     intro_h = estimate_text_height(cover.get("intro_copy", ""), 12, CONTENT_W)
@@ -328,7 +348,7 @@ def build_mobile_cover_slide(flow, cover, watermark_label=""):
     표지 문구 자체는 PC/모바일이 동일했다."""
     slide = flow.new_slide()
     y = flow.y
-    tagline = cover.get("tagline", "")
+    tagline = cover_option_text(cover, "tagline_options", "tagline")
     tagline_h = estimate_text_height(tagline, MOBILE_CAPTION_SIZE, CONTENT_W,
                                       line_spacing=MOBILE_LINE_SPACING_EST) if tagline else Inches(0.5)
     add_text(slide, MARGIN, y, CONTENT_W, tagline_h, tagline,
@@ -352,9 +372,10 @@ def build_mobile_cover_slide(flow, cover, watermark_label=""):
     y += Inches(0.15)
     add_small_image_placeholder(slide, y, Inches(2.7), Inches(1.1), "메인 이미지 (기존 이미지 재사용)")
     y += Inches(1.2)
-    if cover.get("subtitle"):
-        subtitle_h = estimate_text_height(cover["subtitle"], MOBILE_TITLE_SIZE, CONTENT_W, bold=True)
-        add_text(slide, MARGIN, y, CONTENT_W, subtitle_h, cover["subtitle"],
+    subtitle = cover_option_text(cover, "subtitle_options", "subtitle")
+    if subtitle:
+        subtitle_h = estimate_text_height(subtitle, MOBILE_TITLE_SIZE, CONTENT_W, bold=True)
+        add_text(slide, MARGIN, y, CONTENT_W, subtitle_h, subtitle,
                   size=MOBILE_TITLE_SIZE, bold=True, align=PP_ALIGN.CENTER)
         y += subtitle_h + Inches(0.08)
     intro_h = estimate_text_height(cover.get("intro_copy", ""), MOBILE_BODY_SIZE, CONTENT_W,
