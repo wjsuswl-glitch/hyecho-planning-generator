@@ -73,7 +73,7 @@ SCHEMA_HINTS = {
   "background_story": {"title": str, "content": str},
   "why_reasons": [ {"title": str, "content": str} ],
   "destinations_heading": str,
-  "destinations": [ {"title": str, "description": str, "region_tag": str} ],
+  "destinations": [ {"title": str, "description": str, "region_tag": str, "stats": str} ],
   "tour_spots_heading": str,
   "tour_spots": [ {"title": str, "description": str, "region_tag": str} ],
   "route_compare": {
@@ -85,7 +85,7 @@ SCHEMA_HINTS = {
   "experience_points": [ {"title": str, "description": str} ],
   "guide_profile": [ {"name": str, "title": str, "bio": str} ],
   "season": {"title": str, "content": str, "stat_line": str},
-  "season_table": [ {"month": str, "high": str, "low": str} ],
+  "season_table": [ {"month": str, "high": str, "low": str, "rain": str} ],
   "meal_info": {"question": str, "answer": str},
   "altitude_profile": [ {"name": str, "altitude": str, "distance": str, "duration": str, "highlight": str} ],
   "safety_note": {"question": str, "answer": str},
@@ -198,7 +198,9 @@ SCHEMA_HINTS = {
   상품(계절 영향이 없는 도심 관광 등)일 때만 비워도 됩니다.
 ※ season.stat_line: 계절 섹션 상단의 짧은 강조 배너 문구 (예: "최적기: O월~O월")
 ※ season_table: 월별 기온 등 계절 통계가 사업부 자료에 있을 때만 채우세요. 없으면 빈
-  배열로 두세요.
+  배열로 두세요. high/low는 최고·최저기온(°C 숫자만), rain은 월 강수량(mm, 예: "100~130")
+  이며 자료에 강수량 행이 없으면 빈 문자열로 두세요. 자료의 월(月)을 임의로 빼거나
+  바꾸지 말고 그대로 옮기세요.
 ※ meal_info: "여행/트레킹 중 식사는 어떻게 하나요?" 같은 실용 정보 Q&A입니다. safety_note와
   같은 형식(question/answer)이며, 사업부 자료에 식사 관련 정보(산장식/현지식/포함 여부 등)가
   있을 때만 채우세요. 없으면 question, answer 모두 빈 문자열로 두세요.
@@ -239,6 +241,42 @@ DESTINATIONS_RULE = (
     "예를 들어 하이라이트가 3곳이면 정확히 3개만 만드세요. 템플릿에 슬롯이 몇 개 있든 "
     "상관없이, 있지도 않은 경유지를 지어내서 슬롯을 채우면 안 됩니다. "
     "부족한 슬롯은 조립 단계에서 자동으로 삭제됩니다."
+)
+
+
+# 2026-10-27 '돌로미테 하이라이트 Part.2'를 사람이 만든 기획안과 나란히 비교해서 찾은
+# 문제들 — (1) 사업부 자료가 "N일차"로 나눈 코스를 호수/암봉 테마로 다시 묶어 일차 구조가
+# 사라짐, (2) 코스 설명을 1~2문장으로 과하게 줄여 고유명사·수치·유의사항이 빠짐,
+# (3) 고도표 이미지 속 거리/소요시간이 반영 안 됨, (4) "여섯 개의 호수"처럼 서로 다른
+# 종류(호수 3 + 암봉 3)를 합산해 개수를 틀리게 씀, (5) 최적기 문구가 본문과 어긋남.
+FIDELITY_RULES = (
+    "[원본 충실도 규칙 — 일차 구조·코스 설명·수치·개수]\n"
+    "1) 일차 구조 유지: 사업부 자료가 코스를 \"N일차\"로 나눠 설명하면(예: \"트레킹 1일차) ○○ "
+    "트레킹\"), destinations를 그 일차 순서 그대로 코스 하나당 한 개씩 만들고 region_tag에 "
+    "\"1일차\" 같이 일차를 넣으세요. title에는 코스명만 쓰세요(예: \"브라이에스 호수 "
+    "트레킹\"). 호수/암봉처럼 테마별로 코스를 새로 묶거나 합치지 마세요 — 테마 묶음은 "
+    "why_reasons 등 다른 섹션의 역할입니다.\n"
+    "2) 코스 설명 충실도: description의 문장은 다듬거나 줄여도 되지만, 원본 설명에 있는 "
+    "고유명사(봉우리·호수·산장·루트명, 괄호 속 원어 표기 포함), 수치(해발·고도·거리·시간), "
+    "코스의 핵심 특징(도는 방향, 전망 포인트, 접근 난이도, 위험구간 안내 같은 유의사항)이 "
+    "빠지면 안 됩니다. 코스 한 개를 1~2문장으로 뭉뚱그리지 말고 원본의 핵심 정보가 다 "
+    "들어갈 만큼(보통 3~5문장) 쓰세요.\n"
+    "3) 코스별 수치(stats): 코스별 거리·소요시간·최고고도·상행/하행이 사업부 자료(텍스트, "
+    "또는 워드에 삽입된 고도표 이미지)에 있으면 destinations[].stats에 한 줄로 그대로 "
+    "옮기세요(예: \"트레킹 거리: 약 4km, 소요시간: 약 2시간, 최고 고도: 1,540m, 상행/하행: "
+    "70m/70m\"). 이미지에서 읽은 수치는 글자 그대로 옮기고, 이미지에 없는 항목은 생략하며, "
+    "코스명(이미지 제목)이 맞는 이미지의 수치만 쓰세요 — 다른 코스의 수치를 섞거나 "
+    "복사하지 마세요. 자료에 전혀 없으면 빈 문자열로 두세요. altitude_profile도 같은 "
+    "이미지/자료를 근거로 코스(구간)마다 name(코스명), altitude(최고고도), distance, "
+    "duration, highlight를 채우세요.\n"
+    "4) 개수·수량 표현: \"N개의 호수\", \"여섯 곳\" 같은 수량은 사업부 자료의 항목을 실제로 "
+    "세어 정확히 일치할 때만 쓰세요. 종류가 다른 것을 합산해 한 종류의 개수처럼 쓰면 "
+    "오류입니다(예: 호수 3곳 + 암봉 3곳을 \"여섯 개의 호수\"라고 쓰면 안 됨). 확신이 없으면 "
+    "수량 표현 자체를 쓰지 마세요. 표지 후보안(tagline_options/subtitle_options), 배너 "
+    "카피를 포함한 모든 필드에 똑같이 적용됩니다.\n"
+    "5) 시기·기간 표현: 최적기나 시즌 문구(season.stat_line, 제목 등)는 사업부 자료가 언급한 "
+    "월 범위와 어긋나지 않게 쓰세요. 본문에서 설명하는 달(예: 6월)을 제목의 범위에서 "
+    "빼서 서로 모순되게 만들지 마세요."
 )
 
 # 카테고리별 금지 표현 — 특정 기획자 문체(STYLE_RULES)가 아니라 회사 전체의 브랜드
@@ -407,6 +445,8 @@ web_search 도구를 사용할 수 있습니다. 사업부 자료에 없는 배�
 
 {DESTINATIONS_RULE if "destinations" in SCHEMA_HINTS.get(writer_style, "") else ""}
 
+{FIDELITY_RULES if "destinations" in SCHEMA_HINTS.get(writer_style, "") else ""}
+
 [Few-shot 예시 {len(examples)}개 — 문체·구조 참고 전용]
 아래 예시들은 전혀 다른 여행 상품(지명, 코스, 하이라이트 등)에 대한 과거 결과물입니다.
 문장 톤·문단 구성 방식·섹션 나누는 방식만 참고하세요.
@@ -424,6 +464,11 @@ web_search 도구를 사용할 수 있습니다. 사업부 자료에 없는 배�
 자료와 동등한 '사업부 원본자료'로 취급해 반영하세요. 다만 이미지가 단순 풍경/분위기
 참고용인 경우 억지로 사실 정보를 추출하려 하지 말고, 명확히 읽을 수 있는 텍스트/데이터만
 사용하세요.
+
+"[워드 삽입 이미지 N: ...]"라는 안내가 붙은 이미지는 사업부가 워드 본문에 직접 넣은
+자료(고도표·지도·표 캡처 등)입니다. 이런 이미지 속 글자와 수치(코스명, 거리, 소요시간,
+최고고도, 상행/하행, 경유 산장·고개 이름과 고도 등)는 텍스트 자료와 똑같은 원본자료이니
+빠짐없이 읽어서 위 [원본 충실도 규칙]의 stats/altitude_profile 등에 반영하세요.
 
 [상품 병합 케이스 — 첨부 이미지가 '기존 상품소개' 자료일 때]
 첨부 이미지가 풍경 사진이 아니라 기존에 만들어둔 다른 상품소개 자료(옛 기획안 슬라이드
