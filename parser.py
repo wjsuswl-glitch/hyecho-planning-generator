@@ -187,3 +187,53 @@ def encode_image_block(path, max_dimension=2000, jpeg_quality=85):
         img = img.resize(new_size, Image.LANCZOS)
 
     return _to_jpeg_block(img, jpeg_quality)
+
+
+def extract_docx_images(path, min_side=200, max_images=16):
+    """워드(.docx) 본문에 '삽입된' 이미지(고도표, 지도, 일정표 캡처 등)를 문서 등장 순서대로
+    꺼내서 (직전 문단 텍스트, 이미지 바이트) 목록으로 돌려준다.
+
+    [2026-10-27 추가 배경] '돌로미테 하이라이트 Part.2' 비교 테스트에서, 사업부 워드 안에
+    트레킹 일차별 고도표 이미지 6장(코스별 거리·소요시간·최고고도·상행/하행·경유 산장이
+    그림 안에만 적혀 있음)이 들어 있었는데, parse_docx는 문단/표 텍스트만 읽어서 이
+    이미지를 통째로 무시했고, 그 결과 사람이 만든 기획안에는 있는 거리/소요시간 수치가
+    자동 생성본에는 하나도 없었다. 워드에 박혀 있는 이미지도 사업부 원본자료이므로
+    텍스트와 같이 AI에게 보여줘야 한다.
+
+    - 로고/아이콘 같은 작은 이미지(가로·세로 어느 한쪽이 min_side 미만)는 건너뛴다.
+    - 같은 이미지가 여러 번 쓰였으면(해시 동일) 한 번만 꺼낸다.
+    - 이미지가 너무 많아 비용이 폭증하지 않도록 max_images개까지만 꺼낸다.
+    - 반환: [{"index": 1, "context": "직전 문단 텍스트(최대 60자)", "blob": bytes}, ...]"""
+    import hashlib
+    doc = Document(path)
+    results, seen = [], set()
+    last_text = ""
+    A_BLIP = "{http://schemas.openxmlformats.org/drawingml/2006/main}blip"
+    R_EMBED = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}embed"
+    for child in doc.element.body.iterchildren():
+        if child.tag == qn("w:p"):
+            para = Paragraph(child, doc)
+            for blip in child.iter(A_BLIP):
+                rid = blip.get(R_EMBED)
+                if not rid or rid not in doc.part.related_parts:
+                    continue
+                blob = doc.part.related_parts[rid].blob
+                digest = hashlib.md5(blob).hexdigest()
+                if digest in seen:
+                    continue
+                try:
+                    w, h = Image.open(io.BytesIO(blob)).size
+                except Exception:
+                    continue
+                if min(w, h) < min_side:
+                    continue
+                seen.add(digest)
+                results.append({"index": len(results) + 1,
+                                "context": last_text[:60], "blob": blob})
+                if len(results) >= max_images:
+                    return results
+            if para.text.strip():
+                last_text = para.text.strip()
+        elif child.tag == qn("w:tbl"):
+            last_text = "(표)"
+    return results
