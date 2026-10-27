@@ -1002,10 +1002,18 @@ def build_season_slide(flow, season, season_table=None):
     return slide
 
 
+# 구간별 고도 프로필(자리표시 박스 + 코스명/고도 라벨) 슬라이드 부분 노출 여부.
+# 2026-10-27 담당자(정현지) 요청: 항상 들어가는데 필요 없는 부분이라 기본값을 끔(False).
+# 다시 켜려면 True로 바꾸고 prompt_builder.py 스키마에 altitude_profile을 되살리면 된다.
+SHOW_ALTITUDE_PROFILE = False
+
+
 def build_safety_slide(flow, altitude_profile, safety_note):
     """경유지 고도 프로필(있는 경우) + 안전/난이도 관련 표준 안내.
     고산 트레킹의 '고산증', 도보순례의 '체력/보험', 일반 하이킹의 '난이도' 등
     카테고리에 따라 톤이 다른 표준 안내문을 담는 범용 섹션."""
+    if not SHOW_ALTITUDE_PROFILE:
+        altitude_profile = None
     if not altitude_profile and not safety_note:
         return None
     ans_h = Inches(0)
