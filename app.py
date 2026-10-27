@@ -3,7 +3,9 @@ import streamlit as st
 import tempfile, os, json, sys, unicodedata
 
 sys.path.insert(0, os.path.dirname(__file__))
-from parser import parse_docx, detect_format_and_draft_copy, parse_pptx, encode_image_blocks
+import io
+from parser import (parse_docx, detect_format_and_draft_copy, parse_pptx, encode_image_blocks,
+                    extract_docx_images)
 from prompt_builder import build_system_prompt, build_mobile_system_prompt
 from generator import generate_content
 from reviewer import review_content
@@ -35,6 +37,32 @@ def build_multimodal_image_blocks(image_files):
             })
         blocks.extend(slices)
     return blocks
+
+
+def build_docx_embedded_image_blocks(docx_files):
+    """사업부 워드(.docx) 안에 삽입돼 있는 이미지(고도표/지도/일정표 캡처 등)를 AI에게
+    보낼 이미지 블록으로 만든다. 2026-10-27 '돌로미테 하이라이트 Part.2' 비교 테스트에서,
+    워드 안 고도표 이미지에만 적혀 있던 거리/소요시간/최고고도/상행·하행 수치가 통째로
+    누락된 것이 원인 확인됐다(parse_docx는 텍스트만 읽음). 각 이미지 앞에는 몇 번째
+    이미지이고 워드 어느 문단 뒤에 있었는지를 알려주는 라벨 텍스트를 붙인다.
+    반환: (블록 목록, 꺼낸 이미지 개수)"""
+    blocks, total = [], 0
+    for name, path in docx_files:
+        try:
+            imgs = extract_docx_images(path)
+        except Exception:
+            continue  # 이미지 추출 실패가 전체 생성을 막으면 안 된다 — 텍스트만으로 계속 진행
+        for img in imgs:
+            total += 1
+            ctx = f" (워드에서 '{img['context']}' 문단 뒤에 위치)" if img["context"] else ""
+            blocks.append({
+                "type": "text",
+                "text": f"[워드 삽입 이미지 {total}: {name} 안의 {img['index']}번째 이미지{ctx}. "
+                        f"사업부가 본문에 직접 넣은 자료(고도표/지도/표 등)이므로 이미지 속 글자와 "
+                        f"수치도 텍스트 자료와 똑같이 원본자료로 읽어 반영하세요.]",
+            })
+            blocks.extend(encode_image_blocks(io.BytesIO(img["blob"])))
+    return blocks, total
 
 st.set_page_config(page_title="혜초 기획안 자동생성", page_icon="🧳")
 st.title("🧳 혜초여행 기획안 자동생성")
@@ -163,6 +191,13 @@ if uploaded_files and st.button("생성하기", type="primary"):
                     sections[f"[추가자료: {name}] {k}"] = v
 
             image_blocks = build_multimodal_image_blocks(image_files)
+            # 워드 안에 삽입된 이미지(고도표 등)도 원본자료 — 업로드 이미지 뒤에 이어 붙인다.
+            docx_img_blocks, docx_img_count = build_docx_embedded_image_blocks(docx_files)
+            image_blocks = list(image_blocks) + docx_img_blocks
+
+        if docx_img_count:
+            st.info(f"워드 파일 안에 삽입된 이미지 {docx_img_count}개를 찾아 AI에게 함께 전달합니다 "
+                    f"(고도표·지도·표 속 수치 반영용).")
 
         extra_count = len(docx_files) - 1 + len(pptx_files) + len(image_files)
         st.success(
