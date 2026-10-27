@@ -251,7 +251,7 @@ if uploaded_files and st.button("생성하기", type="primary"):
                         # 폰트/여백/배지/배경색이 모바일 가이드라인에 맞게 다르게 그려진다.
                         dynamic_builder.build_mobile(version_content, out_path, review=review)
                         log = [("dynamic_build_mobile", "OK — 모바일 최적화 스타일로 생성됨")]
-                    elif writer_style in ("정현지", "박소설", "신윤정", "최정인"):
+                    elif writer_style in ("정현지", "박소설", "신윤정", "최정인", "최민지"):
                         # v2: 옛 기획안을 열어 덮어쓰지 않고, 매번 새로 슬라이드를 생성.
                         # review도 같이 넘겨서 검수 결과가 PPTX 마지막 페이지에도 남게
                         # 한다 — 예전엔 이 화면(Streamlit)에만 표시되고 다운로드한
