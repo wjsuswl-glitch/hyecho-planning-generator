@@ -202,13 +202,16 @@ def add_badge_pill(slide, left, top, text, size=13, fill=MOBILE_BADGE_COLOR, tex
     return pill, width, height
 
 
-def add_image_placeholder(slide, left, top, width, height, label="이미지"):
+def add_image_placeholder(slide, left, top, width, height, label="이미지", label_bottom=False):
+    """label_bottom=True면 라벨을 박스 가운데가 아니라 위쪽 가운데에 둔다 — 배너 슬라이드처럼
+    박스 위에 카피 텍스트가 겹쳐 올라가는 경우, 가운데 라벨이 카피와 겹쳐 읽기 어려웠다
+    (2026-10-27 비교 테스트 배너 4칸 모두에서 확인)."""
     box = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, left, top, width, height)
     box.fill.background()
     box.line.color.rgb = RGBColor(0xAA, 0xAA, 0xAA)
     tf = box.text_frame
-    tf.vertical_anchor = MSO_ANCHOR.MIDDLE
-    _tf_setup(tf, label, 11, MUTED_COLOR, align=PP_ALIGN.CENTER)
+    tf.vertical_anchor = MSO_ANCHOR.BOTTOM if label_bottom else MSO_ANCHOR.MIDDLE
+    _tf_setup(tf, label, 11 if not label_bottom else 9, MUTED_COLOR, align=PP_ALIGN.CENTER)
     return box
 
 
@@ -442,7 +445,9 @@ def build_destination_slides(flow, destinations, section_title=None, theme_line=
             y = flow.y
             # 그룹이 슬라이드 경계를 넘어 이어지면, 새 슬라이드 맨 위에서도 그룹명을
             # 다시 보여준다 — 안 그러면 방문지가 갑자기 그룹 없이 나온 것처럼 보인다.
-            if current_group:
+            # 다음 방문지가 같은 그룹일 때만 그룹 바를 다시 그린다 — 안 그러면 방문지 없이
+            # 앞 그룹 바만 덩그러니 남는다(일차별로 region_tag가 1개씩일 때 발견, 2026-10-27).
+            if current_group and (destinations[idx].get("region_tag") or None) == current_group:
                 bar_h = group_bar_height(current_group)
                 add_group_bar(slide, y, current_group, height=bar_h)
                 y += bar_h + Inches(0.15)
@@ -457,10 +462,15 @@ def build_destination_slides(flow, destinations, section_title=None, theme_line=
             title_h = estimate_text_height(dest.get("title", ""), 15, title_w, bold=True)
             image_h = Inches(0.45)
             desc_h = estimate_text_height(dest.get("description", ""), 12, title_w)
+            # stats: 코스별 거리/소요시간/최고고도/상행·하행 한 줄 요약(없으면 생략).
+            # 2026-10-27 — 사람이 만든 기획안엔 코스마다 이 줄이 있는데 자동 생성본엔 없던 문제.
+            stats_text = (dest.get("stats") or "").strip()
+            stats_h = estimate_text_height(stats_text, 11, title_w, bold=True) if stats_text else Inches(0)
             group_label_h = Inches(0)
             if is_new_group:
                 group_label_h = group_bar_height(group) + Inches(0.15)
             block_h = group_label_h + title_h + Inches(0.06) + image_h + Inches(0.1) \
+                + (stats_h + Inches(0.06) if stats_text else Inches(0)) \
                 + desc_h + Inches(0.18)
 
             if placed_any and y + block_h > flow.bottom_limit:
@@ -478,6 +488,10 @@ def build_destination_slides(flow, destinations, section_title=None, theme_line=
             y += title_h + Inches(0.06)
             add_small_image_placeholder(slide, y, Inches(1.6), image_h, "이미지")
             y += image_h + Inches(0.1)
+            if stats_text:
+                add_text(slide, x, y, title_w, stats_h, stats_text, size=11, bold=True,
+                          color=ACCENT_COLOR)
+                y += stats_h + Inches(0.06)
             add_text(slide, x, y, title_w, desc_h, dest.get("description", ""),
                       size=12, color=MUTED_COLOR)
             y += desc_h + Inches(0.18)
@@ -521,7 +535,9 @@ def build_mobile_destination_slides(flow, destinations, section_title=None, them
         else:
             slide = flow.new_slide()
             y = flow.y
-            if current_group:
+            # 다음 방문지가 같은 그룹일 때만 그룹 바를 다시 그린다 — 안 그러면 방문지 없이
+            # 앞 그룹 바만 덩그러니 남는다(일차별로 region_tag가 1개씩일 때 발견, 2026-10-27).
+            if current_group and (destinations[idx].get("region_tag") or None) == current_group:
                 bar_h = group_bar_height(current_group, size=MOBILE_CAPTION_SIZE + 1)
                 add_group_bar(slide, y, current_group, height=bar_h, size=MOBILE_CAPTION_SIZE + 1)
                 y += bar_h + Inches(0.15)
@@ -931,7 +947,10 @@ def build_season_slide(flow, season, season_table=None):
     header_h = Inches(0.6)
     stat_h = Inches(0.5) if season.get("stat_line") else Inches(0)
     content_h = estimate_text_height(season.get("content", ""), 12, CONTENT_W)
-    table_h = Inches(0.85) + Inches(0.3) if season_table else Inches(0)
+    # 기온/강수량 값 표 — 행 수(최저/최고 + 강수량이 있으면 1행) × 행 높이 + 헤더 1행
+    has_rain = bool(season_table) and any((r.get("rain") or "").strip() for r in season_table)
+    n_rows = (3 if has_rain else 2) + 1
+    table_h = (Inches(0.85) + Inches(0.26) * n_rows + Inches(0.1)) if season_table else Inches(0)
     total_h = header_h + stat_h + content_h + Inches(0.3) + table_h
 
     y = flow.ensure(total_h)
@@ -952,10 +971,33 @@ def build_season_slide(flow, season, season_table=None):
         add_image_placeholder(slide, MARGIN, y, CONTENT_W, Inches(0.7),
                                "월별 기온 차트 (자리표시 — 실제 그래픽은 디자이너 작업)")
         y += Inches(0.85)
-        header = "  ".join(f"{row.get('month','')}" for row in season_table)
-        add_text(slide, MARGIN, y, CONTENT_W, Inches(0.3), header, size=10, color=MUTED_COLOR,
-                  align=PP_ALIGN.CENTER)
-        y += Inches(0.3)
+        # 예전엔 월 이름만 한 줄로 찍고 기온/강수량 값은 JSON에만 있어서 디자이너가 값을
+        # 볼 수 없었다(2026-10-27 비교 테스트에서 확인) — 값이 보이는 실제 표를 넣는다.
+        row_h = Inches(0.26)
+        tbl_shape = slide.shapes.add_table(n_rows, len(season_table) + 1, MARGIN, y,
+                                           CONTENT_W, row_h * n_rows)
+        tbl = tbl_shape.table
+        labels = ["구분", "최저기온 (°C)", "최고기온 (°C)"] + (["강수량 (mm)"] if has_rain else [])
+        for r_i, label in enumerate(labels):
+            tbl.cell(r_i, 0).text = label
+        for c_i, row in enumerate(season_table, start=1):
+            tbl.cell(0, c_i).text = str(row.get("month", ""))
+            tbl.cell(1, c_i).text = str(row.get("low", ""))
+            tbl.cell(2, c_i).text = str(row.get("high", ""))
+            if has_rain:
+                tbl.cell(3, c_i).text = str(row.get("rain", ""))
+        for r_i in range(n_rows):
+            tbl.rows[r_i].height = row_h
+            for c_i in range(len(season_table) + 1):
+                cell = tbl.cell(r_i, c_i)
+                cell.margin_top = cell.margin_bottom = Inches(0.02)
+                for para in cell.text_frame.paragraphs:
+                    para.alignment = PP_ALIGN.CENTER
+                    for run in para.runs:
+                        run.font.size = Pt(9)
+                        run.font.name = FONT_NAME
+                        run.font.bold = (r_i == 0 or c_i == 0)
+        y += row_h * n_rows + Inches(0.1)
     flow.y = y
     return slide
 
@@ -1126,28 +1168,28 @@ def build_banner_request_slide(flow, cover, banner_copy=None):
     # 메인 와이드 배너 — 부제 2줄(kicker+title, 후킹 카피, size 11) + 상품명(size 18, 굵게)
     add_text(slide, Inches(0.106), Inches(1.271), Inches(5.701), Inches(0.303),
               "메인 와이드 배너 (PC: 1920x700, MO: 750x510), 가이드라인에 맞춰 제작", size=9, color=MUTED_COLOR)
-    add_image_placeholder(slide, Inches(0.217), Inches(1.630), Inches(5.475), Inches(1.817), "이미지")
+    add_image_placeholder(slide, Inches(0.217), Inches(1.630), Inches(5.475), Inches(1.817), "이미지", label_bottom=True)
     _add_banner_copy(Inches(0.388), Inches(2.158), Inches(5.133),
                       f"{kicker}\n{title}", subtitle_size=11, name_size=18)
 
     # 서브메인 띠배너 — 부제 1줄(kicker, size 11) + 상품명(size 16, 굵게)
     add_text(slide, Inches(0.081), Inches(3.581), Inches(5.642), Inches(0.303),
               "서브메인 띠배너 (PC: 1920x200, MO: 750x200), 가이드라인에 맞춰 제작", size=9, color=MUTED_COLOR)
-    add_image_placeholder(slide, Inches(0.136), Inches(4.021), Inches(7.028), Inches(0.979), "이미지")
+    add_image_placeholder(slide, Inches(0.136), Inches(4.021), Inches(7.028), Inches(0.979), "이미지", label_bottom=True)
     _add_banner_copy(Inches(1.184), Inches(4.173), Inches(5.133),
                       kicker, subtitle_size=11, name_size=16)
 
     # 서브메인 2단배너 — 부제 1줄(kicker, size 9) + 상품명(size 13, 굵게)
     add_text(slide, Inches(0.136), Inches(5.137), Inches(5.642), Inches(0.303),
               "서브메인 2단배너 (PC: 590x370, MO: 585x670), 가이드라인에 맞춰 제작", size=9, color=MUTED_COLOR)
-    add_image_placeholder(slide, Inches(0.221), Inches(5.521), Inches(2.835), Inches(1.771), "이미지")
+    add_image_placeholder(slide, Inches(0.221), Inches(5.521), Inches(2.835), Inches(1.771), "이미지", label_bottom=True)
     _add_banner_copy(Inches(0.288), Inches(6.138), Inches(2.835),
                       kicker, subtitle_size=9, name_size=13)
 
     # 지역 리스트 배너 — 부제 1줄(kicker, size 11) + 상품명(size 16, 굵게)
     add_text(slide, Inches(0.205), Inches(7.481), Inches(5.701), Inches(0.303),
               "지역 리스트 배너 (PC: 1200x207, MO: 750x207), 가이드라인에 맞춰 제작", size=9, color=MUTED_COLOR)
-    add_image_placeholder(slide, Inches(0.316), Inches(7.989), Inches(6.871), Inches(1.336), "이미지")
+    add_image_placeholder(slide, Inches(0.316), Inches(7.989), Inches(6.871), Inches(1.336), "이미지", label_bottom=True)
     _add_banner_copy(Inches(1.184), Inches(8.280), Inches(5.133),
                       kicker, subtitle_size=11, name_size=16)
 
