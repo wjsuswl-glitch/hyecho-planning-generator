@@ -108,6 +108,30 @@ else:
              "끄면 사업부 자료와 일반 상식 범위 내에서만 작성합니다(검색 비용/시간 절약).",
     )
 
+# 기획자 요청사항 — 사업부 자료 외에 기획자가 이번 기획안에 바라는 점을 화면에서 직접 적는다.
+# (2026-10-27 추가) 새 카피를 만드는 "신규 상품소개 제작" 모드에서만 의미가 있다 — 모바일
+# 최적화는 기존 이미지 내용을 그대로 옮기는 작업이라 톤앤매너/강조 지시가 필요 없다.
+planner_request = {}
+if not is_mobile:
+    with st.expander("✍️ 기획자 요청사항 (선택) — 톤앤매너, 강조할 점, 빼야 할 점", expanded=False):
+        st.caption("비워두면 사업부 자료와 선택한 기획자 스타일만으로 만듭니다. "
+                   "적은 내용은 스타일 기본값보다 우선 반영되지만, 사업부 자료에 없는 사실을 "
+                   "만들거나 브랜드 금지 표현(예: 트레킹 '완전정복')을 쓰는 것까지 허용하진 않아요.")
+        planner_request = {
+            "tone": st.text_area(
+                "전체 톤앤매너", height=80,
+                placeholder="예) 차분하고 여유로운 느낌. 설명은 부드러운 ~해요체로."),
+            "emphasize": st.text_area(
+                "강조하면 좋은 부분", height=80,
+                placeholder="예) 겹치지 않는 코스(재방문 고객 대상), 호텔 연박으로 누리는 휴식."),
+            "avoid": st.text_area(
+                "넣으면 안 되는 부분 / 피할 표현", height=80,
+                placeholder="예) 난이도가 어렵다는 느낌을 주는 표현, 타사 언급."),
+            "extra": st.text_area(
+                "기타 요청사항", height=80,
+                placeholder="예) 표지 문구는 짧게, 숫자를 앞세워 주세요."),
+        }
+
 MAX_FILES = 5
 if is_mobile:
     uploaded_files = st.file_uploader(
@@ -209,7 +233,8 @@ if uploaded_files and st.button("생성하기", type="primary"):
 
         with st.spinner("프롬프트 조립 중..."):
             prompt = build_system_prompt(writer_style, category, sections, format_info,
-                                          has_images=bool(image_blocks))
+                                          has_images=bool(image_blocks),
+                                          planner_request=planner_request)
 
     with st.expander("조립된 프롬프트 보기"):
         st.text(prompt[:3000])
