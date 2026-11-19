@@ -1343,6 +1343,14 @@ _ICON_RULES = [
     (("가족", "친구", "커플", "함께"), "heart"),
     (("특별", "프리미엄", "단독", "최초", "유일", "완성"), "sparkles"),
     (("텐트", "캠핑", "야영"), "tent"),
+    # 개요(핵심 정보 칸)용 보강 규칙 — 앞 규칙에 안 걸린 라벨만 여기로 온다
+    (("기간", "박", "출발", "일수"), "calendar-days"),
+    (("난이도", "체력", "강도"), "thermometer"),
+    (("지역", "도시", "핵심", "방문", "나라", "국가"), "map-pin"),
+    (("이동", "교통", "수단"), "bus"),
+    (("인원", "규모", "정원"), "users"),
+    (("가격", "비용", "요금", "경비"), "wallet"),
+    (("체험", "활동", "액티비티"), "sparkles"),
 ]
 
 
@@ -1894,11 +1902,11 @@ def build_pc_background(flow, background_story):
     return s
 
 
-def build_pc_reasons(flow, why_reasons, product_name=""):
+def build_pc_reasons(flow, why_reasons, product_name="", heading=None):
     """'{상품명} 포인트 0N' — H1 + 번호 탭 항목(이미지 자리 + 본문)."""
     if not why_reasons:
         return None
-    heading = f"{product_name} 포인트 {len(why_reasons):02d}".strip()
+    heading = heading or f"{product_name} 포인트 {len(why_reasons):02d}".strip()
     metrics = []
     for i, r in enumerate(why_reasons):
         n_img = _image_count(r)
@@ -2033,12 +2041,12 @@ def build_pc_route_compare(flow, route_compare):
     return s
 
 
-def build_pc_transport(flow, transport_spec):
+def build_pc_transport(flow, transport_spec, image_label="이동수단 이미지", with_image=True, icon="train-front"):
     if not transport_spec or not transport_spec.get("specs"):
         return None
     label_w = Inches(1.5)
     rows = []
-    total = PC_H1_H + Inches(0.18) + PC_IMG_H + Inches(0.14)
+    total = PC_H1_H + Inches(0.18) + ((PC_IMG_H + Inches(0.14)) if with_image else 0)
     for spec in transport_spec["specs"]:
         v = str(spec.get("value", ""))
         rh = max(Inches(0.34), text_h(v, 10.5, PC_CW - label_w - Inches(0.2), ls=1.0, para_gap_pt=0) + Inches(0.14))
@@ -2046,10 +2054,11 @@ def build_pc_transport(flow, transport_spec):
         total += rh
     y = flow.ensure(total)
     s = flow.slide
-    pc_h1(flow, y, transport_spec.get("title") or "이동수단 안내", icon="train-front")
+    pc_h1(flow, y, transport_spec.get("title") or "이동수단 안내", icon=icon)
     y += PC_H1_H + Inches(0.18)
-    pc_image_row(flow, y, flow.take_images(1), label_prefix="이동수단 이미지")
-    y += PC_IMG_H + Inches(0.14)
+    if with_image:
+        pc_image_row(flow, y, flow.take_images(1), label_prefix=image_label)
+        y += PC_IMG_H + Inches(0.14)
     for label, v, rh in rows:
         c = _rect(s, MSO_SHAPE.RECTANGLE, PC_PAGE_MARGIN, y, label_w, rh, fill=PC_PALE_BAR, line=WHITE)
         _shape_text(c, label, 10.5, PC_NAVY, bold=True)
@@ -2061,7 +2070,7 @@ def build_pc_transport(flow, transport_spec):
     return s
 
 
-def build_pc_guide(flow, guide_profile):
+def build_pc_guide(flow, guide_profile, heading="함께하는 사람들"):
     if not guide_profile:
         return None
     first = True
@@ -2079,7 +2088,7 @@ def build_pc_guide(flow, guide_profile):
         y = flow.ensure(need)
         s = flow.slide
         if first:
-            pc_h1(flow, y, "함께하는 사람들", icon="users")
+            pc_h1(flow, y, heading, icon="users")
             y += PC_H1_H + Inches(0.18)
             first = False
         box = _rect(s, MSO_SHAPE.RECTANGLE, PC_PAGE_MARGIN, y, pic, pic, fill=PC_PALE, line=PC_LINE_BLUE, line_w=1.0, dash=True)
@@ -2090,7 +2099,7 @@ def build_pc_guide(flow, guide_profile):
     return flow.slide
 
 
-def build_pc_experience(flow, brand_tagline, experience_points):
+def build_pc_experience(flow, brand_tagline, experience_points, heading="혜초와 함께라면 더 특별한 이유"):
     """브랜드 한 줄 + 경험 포인트 아이콘 카드(최대 4열)."""
     if not brand_tagline and not experience_points:
         return None
@@ -2119,7 +2128,7 @@ def build_pc_experience(flow, brand_tagline, experience_points):
         + sum(row_card_hs) + gap * max(rows_n - 1, 0)
     y = flow.ensure(total)
     s = flow.slide
-    pc_h1(flow, y, "혜초와 함께라면 더 특별한 이유", icon="badge-check")
+    pc_h1(flow, y, heading, icon="badge-check")
     y += PC_H1_H + Inches(0.2)
     if brand_tagline:
         pc_text(s, PC_PAGE_MARGIN + Inches(0.3), y, PC_CW - Inches(0.6), brand_tagline, size=14, bold=True,
@@ -2149,15 +2158,16 @@ def build_pc_experience(flow, brand_tagline, experience_points):
     return s
 
 
-def _pc_table(slide, x, y, widths, rows, row_h, header=True, size=9):
+def _pc_table(slide, x, y, widths, rows, row_h, header=True, size=9, align=PP_ALIGN.CENTER):
     """rows[0]이 머리글. 머리글 네이비, 첫 열 옅은 파랑, 나머지 흰/옅은 줄무늬."""
     n_rows, n_cols = len(rows), len(rows[0])
-    shape = slide.shapes.add_table(n_rows, n_cols, x, y, sum(widths), row_h * n_rows)
+    row_hs = list(row_h) if isinstance(row_h, (list, tuple)) else [row_h] * n_rows
+    shape = slide.shapes.add_table(n_rows, n_cols, x, y, sum(widths), sum(row_hs))
     tbl = shape.table
     for ci, w in enumerate(widths):
         tbl.columns[ci].width = w
     for ri in range(n_rows):
-        tbl.rows[ri].height = row_h
+        tbl.rows[ri].height = row_hs[ri]
         for ci in range(n_cols):
             cell = tbl.cell(ri, ci)
             cell.text = str(rows[ri][ci])
@@ -2175,7 +2185,7 @@ def _pc_table(slide, x, y, widths, rows, row_h, header=True, size=9):
                 cell.fill.fore_color.rgb = WHITE if ri % 2 else PC_PALE
                 fc = PC_BODY
             for para in cell.text_frame.paragraphs:
-                para.alignment = PP_ALIGN.CENTER
+                para.alignment = align if ((ri > 0 or not header) and ci > 0) else PP_ALIGN.CENTER
                 for run in para.runs:
                     run.font.size = Pt(size)
                     run.font.name = FONT_NAME
@@ -2296,6 +2306,620 @@ def build_pc_review_notes(flow, review):
     return slides
 
 
+# ==== PC 상품별 동적 구성(블록 라이브러리, 2026-11) =========================================
+# content_json["sections"] = [{"type": 블록종류, "title": 섹션 제목, ...}, ...] 를 위에서부터
+# 차례로 그린다. 표지/배너/검수 페이지는 고정이고, 그 사이 본문 구성만 상품마다 AI가 고른다.
+
+def _s(v):
+    return "" if v is None else str(v).strip()
+
+
+def _items(sec, *keys):
+    for k in keys + ("items",):
+        v = sec.get(k)
+        if isinstance(v, list) and v:
+            return v
+    return []
+
+
+def _item_dict(it, *title_keys):
+    """리스트 항목이 문자열이어도 {"title": ...}처럼 다룰 수 있게 정규화."""
+    if isinstance(it, dict):
+        return it
+    return {"title": _s(it)}
+
+
+def _first(d, *keys, default=""):
+    for k in keys:
+        v = d.get(k)
+        if v not in (None, ""):
+            return _s(v)
+    return default
+
+
+def _begin(flow, heading, icon, need_after, gap=Inches(0.3)):
+    """섹션 제목 바를 그리고, 제목만 페이지 끝에 남지 않도록 첫 항목 높이까지 함께 확보한다."""
+    y = flow.ensure(PC_H1_H + Inches(0.18) + need_after, gap_before=gap)
+    pc_h1(flow, y, heading, icon=icon)
+    flow.y = y + PC_H1_H + Inches(0.18)
+    return flow.y
+
+
+def _img_box(slide, x, y, w, h, label):
+    _rect(slide, MSO_SHAPE.RECTANGLE, x, y, w, h, fill=PC_PALE, line=PC_LINE_BLUE, line_w=1.0, dash=True)
+    add_icon(slide, "image", x + int((w - Inches(0.28)) / 2), y + int(h / 2) - Inches(0.26), Inches(0.28))
+    pc_text(slide, x, y + int(h / 2) + Inches(0.04), w, label, size=10, color=PC_LINE_BLUE, bold=True,
+            align=PP_ALIGN.CENTER, ls=1.0)
+
+
+# ---- 개요(핵심 정보 칸 + 지도 자리) ----
+
+def build_pc_overview(flow, sec):
+    heading = _s(sec.get("title")) or "여행 한눈에 보기"
+    facts = [_item_dict(f) for f in _items(sec, "facts")]
+    facts = [f for f in facts if _first(f, "value", "title") or _first(f, "label")]
+    intro = _s(sec.get("intro") or sec.get("content"))
+    want_map = sec.get("map", True) not in (False, "false", "False", 0)
+    if not facts and not intro:
+        return None
+    n = len(facts)
+    cols = 0 if n == 0 else (n if n <= 4 else (3 if n <= 6 else 4))
+    gap = Inches(0.12)
+    card_w = int((PC_CW - gap * (cols - 1)) / cols) if cols else 0
+    inner = card_w - Inches(0.2)
+    rows_n = -(-n // cols) if cols else 0
+    row_hs = []
+    for r in range(rows_n):
+        chunk = facts[r * cols:(r + 1) * cols]
+        lab = max(text_h(_first(f, "label"), 9.5, inner, ls=1.0, para_gap_pt=0) for f in chunk)
+        val = max(text_h(_first(f, "value", "title"), 11.5, inner, bold=True, ls=1.0, para_gap_pt=0) for f in chunk)
+        row_hs.append(Inches(0.16) + Inches(0.34) + Inches(0.08) + lab + Inches(0.05) + val + Inches(0.16))
+    intro_h = pc_body_h(intro) if intro else Emu(0)
+    map_h = Inches(1.55) if want_map else Emu(0)
+    first_need = (intro_h + Inches(0.14)) if intro else (row_hs[0] if row_hs else map_h)
+    y = _begin(flow, heading, sec.get("icon") or "map", first_need)
+    s = flow.slide
+    if intro:
+        pc_body(flow, y, intro)
+        y += intro_h + Inches(0.14)
+        flow.y = y
+    for r in range(rows_n):
+        y = flow.ensure(row_hs[r], gap_before=Inches(0.0) if r == 0 else Inches(0.12))
+        s = flow.slide
+        chunk = facts[r * cols:(r + 1) * cols]
+        for c, f in enumerate(chunk):
+            x = PC_PAGE_MARGIN + (card_w + gap) * c
+            _rect(s, MSO_SHAPE.ROUNDED_RECTANGLE, x, y, card_w, row_hs[r], fill=PC_PALE,
+                  line=RGBColor(0xC9, 0xD8, 0xE8)).adjustments[0] = 0.08
+            ic = pick_icon(_first(f, "label"), _first(f, "value", "title"), f.get("icon"))
+            add_icon(s, ic, x + int((card_w - Inches(0.34)) / 2), y + Inches(0.16), Inches(0.34))
+            ty = y + Inches(0.16) + Inches(0.34) + Inches(0.08)
+            lab_h = max(text_h(_first(g, "label"), 9.5, inner, ls=1.0, para_gap_pt=0) for g in chunk)
+            pc_text(s, x + Inches(0.1), ty, inner, _first(f, "label"), size=9.5, color=PC_SUB,
+                    align=PP_ALIGN.CENTER, ls=1.0, para_gap_pt=0)
+            pc_text(s, x + Inches(0.1), ty + lab_h + Inches(0.05), inner, _first(f, "value", "title"), size=11.5,
+                    bold=True, color=PC_NAVY, align=PP_ALIGN.CENTER, ls=1.0, para_gap_pt=0)
+        y += row_hs[r]
+        flow.y = y
+    if want_map:
+        y = flow.ensure(map_h, gap_before=Inches(0.14))
+        box = _rect(flow.slide, MSO_SHAPE.RECTANGLE, PC_PAGE_MARGIN, y, PC_CW, map_h, fill=PC_PALE,
+                    line=PC_LINE_BLUE, line_w=1.0, dash=True)
+        _shape_text(box, _s(sec.get("map_label")) or "여정 지도 (자리표시 — 실제 지도는 디자이너 작업)", 10,
+                    PC_LINE_BLUE, bold=True)
+        flow.y = y + map_h
+    return flow.slide
+
+
+# ---- 아이콘 카드/행(추천 대상, 체크 리스트 등) ----
+
+def _icon_rows(flow, heading, heading_icon, items, default_icon, card=True):
+    items = [_item_dict(i) for i in items]
+    items = [i for i in items if _first(i, "title", "question", "name") or _first(i, "description", "answer", "content")]
+    if not items:
+        return None
+    off = Inches(0.77) if card else Inches(0.44)
+    tw = PC_CW - off - (Inches(0.15) if card else 0)
+    first = True
+    for it in items:
+        t = _first(it, "title", "question", "name")
+        d = _first(it, "description", "answer", "content")
+        t_h = text_h(t, 12 if card else 11.5, tw, bold=True, ls=1.0, para_gap_pt=0) if t else Emu(0)
+        d_h = pc_body_h(d, tw, size=10.5) if d else Emu(0)
+        body_h = t_h + (Inches(0.06) if (t and d) else 0) + d_h
+        h = (Inches(0.14) + max(body_h, Inches(0.46)) + Inches(0.14)) if card else (max(body_h, Inches(0.26)) + Inches(0.06))
+        if first:
+            y = _begin(flow, heading, heading_icon, h)
+            first = False
+        else:
+            y = flow.ensure(h, gap_before=Inches(0.1) if card else Inches(0.06))
+        s = flow.slide
+        if card:
+            _rect(s, MSO_SHAPE.ROUNDED_RECTANGLE, PC_PAGE_MARGIN, y, PC_CW, h, fill=PC_PALE,
+                  line=RGBColor(0xC9, 0xD8, 0xE8)).adjustments[0] = 0.06
+            _rect(s, MSO_SHAPE.OVAL, PC_PAGE_MARGIN + Inches(0.12), y + int((h - Inches(0.46)) / 2), Inches(0.46),
+                  Inches(0.46), fill=WHITE, line=PC_LINE_BLUE)
+            ik = it.get("icon") if it.get("icon") in ICON_KEYS else None
+            if not ik:
+                guess = pick_icon(t, d, None)
+                ik = default_icon if guess == "star" else guess
+            add_icon(s, ik, PC_PAGE_MARGIN + Inches(0.2), y + int((h - Inches(0.3)) / 2), Inches(0.3))
+            ty = y + Inches(0.14) + (max(body_h, Inches(0.46)) - body_h) / 2
+        else:
+            add_icon(s, it.get("icon") if it.get("icon") in ICON_KEYS else default_icon, PC_PAGE_MARGIN + Inches(0.04), y + Inches(0.02), Inches(0.22))
+            ty = y
+        tx = PC_PAGE_MARGIN + off
+        if t:
+            pc_text(s, tx, ty, tw, t, size=12 if card else 11.5, bold=True, color=PC_NAVY if card else PC_BODY,
+                    ls=1.0, para_gap_pt=0)
+            ty += t_h + (Inches(0.06) if d else 0)
+        if d:
+            pc_text(s, tx, ty, tw, d, size=10.5, color=PC_BODY if card else PC_SUB)
+        flow.y = y + h
+    return flow.slide
+
+
+def build_pc_audience(flow, sec):
+    return _icon_rows(flow, _s(sec.get("title")) or "이런 분께 추천해요", sec.get("icon") or "users",
+                      _items(sec, "audiences"), "heart", card=True)
+
+
+def build_pc_list(flow, sec):
+    heading = _s(sec.get("title")) or "안내"
+    return _icon_rows(flow, heading, sec.get("icon") or "circle-check", _items(sec), "circle-check", card=False)
+
+
+# ---- 하이라이트(소제목 + 핵심 키워드 + 이미지 + 본문) ----
+
+def build_pc_highlights(flow, sec):
+    heading = _s(sec.get("title")) or "하이라이트"
+    items = [_item_dict(i) for i in _items(sec, "highlights")]
+    items = [i for i in items if _first(i, "keyword", "title") or _first(i, "description", "content")]
+    if not items:
+        return None
+    first = True
+    for it in items:
+        kicker = _first(it, "kicker", "subtitle")
+        kw = _first(it, "keyword", "title")
+        desc = _first(it, "description", "content")
+        n_img = _image_count(it)
+        k_h = text_h(kicker, 10.5, PC_CW - Inches(0.4), ls=1.0, para_gap_pt=0) if kicker else Emu(0)
+        w_h = text_h(kw, 15, PC_CW - Inches(0.4), bold=True, ls=1.0, para_gap_pt=0) if kw else Emu(0)
+        d_h = pc_body_h(desc)
+        h = (k_h + Inches(0.05) if kicker else 0) + w_h + Inches(0.12) + PC_IMG_H + Inches(0.12) + d_h
+        if first:
+            y = _begin(flow, heading, sec.get("icon") or "gem", h)
+            first = False
+        else:
+            y = flow.ensure(h, gap_before=Inches(0.28))
+        s = flow.slide
+        if kicker:
+            pc_text(s, PC_PAGE_MARGIN + Inches(0.2), y, PC_CW - Inches(0.4), kicker, size=10.5, color=PC_LINE_BLUE,
+                    align=PP_ALIGN.CENTER, ls=1.0, para_gap_pt=0)
+            y += k_h + Inches(0.05)
+        if kw:
+            pc_text(s, PC_PAGE_MARGIN + Inches(0.2), y, PC_CW - Inches(0.4), kw, size=15, bold=True, color=PC_NAVY,
+                    align=PP_ALIGN.CENTER, ls=1.0, para_gap_pt=0)
+            y += w_h + Inches(0.12)
+        pc_image_row(flow, y, flow.take_images(n_img))
+        y += PC_IMG_H + Inches(0.12)
+        pc_body(flow, y, desc)
+        flow.y = y + d_h
+    return flow.slide
+
+
+# ---- 사진 카드(메뉴·맛집·숙소·객실·체험 등 2열) ----
+
+def build_pc_cards(flow, sec):
+    heading = _s(sec.get("title")) or "하나하나 소개해요"
+    items = [_item_dict(i) for i in _items(sec, "cards")]
+    items = [i for i in items if _first(i, "title", "name")]
+    if not items:
+        return None
+    try:
+        cols = int(sec.get("columns", 2))
+    except (TypeError, ValueError):
+        cols = 2
+    cols = max(1, min(3, cols))
+    if len(items) == 1:
+        cols = 1
+    gap = Inches(0.14)
+    card_w = int((PC_CW - gap * (cols - 1)) / cols)
+    inner = card_w - Inches(0.24)
+    img_h = Inches(1.05) if cols >= 2 else Inches(1.3)
+    rows = [items[i:i + cols] for i in range(0, len(items), cols)]
+
+    def card_h(it):
+        t = _first(it, "title", "name")
+        sub = _first(it, "subtitle", "tag")
+        d = _first(it, "description", "content")
+        return (Inches(0.12) + img_h + Inches(0.1) + text_h(t, 12, inner, bold=True, ls=1.0, para_gap_pt=0)
+                + ((text_h(sub, 9.5, inner, bold=True, ls=1.0, para_gap_pt=0) + Inches(0.05)) if sub else 0)
+                + ((text_h(d, 10, inner, ls=1.0, para_gap_pt=0) + Inches(0.06)) if d else 0) + Inches(0.14))
+
+    first = True
+    for chunk in rows:
+        rh = max(card_h(i) for i in chunk)
+        if first:
+            y = _begin(flow, heading, sec.get("icon") or "utensils", rh)
+            first = False
+        else:
+            y = flow.ensure(rh, gap_before=Inches(0.14))
+        s = flow.slide
+        for c, it in enumerate(chunk):
+            x = PC_PAGE_MARGIN + (card_w + gap) * c
+            _rect(s, MSO_SHAPE.ROUNDED_RECTANGLE, x, y, card_w, rh, fill=WHITE,
+                  line=RGBColor(0xC9, 0xD8, 0xE8)).adjustments[0] = 0.04
+            _img_box(s, x + Inches(0.12), y + Inches(0.12), card_w - Inches(0.24), img_h,
+                     f"이미지 {flow.take_images(1)[0]}")
+            ty = y + Inches(0.12) + img_h + Inches(0.1)
+            t = _first(it, "title", "name")
+            pc_text(s, x + Inches(0.12), ty, inner, t, size=12, bold=True, color=PC_NAVY, ls=1.0, para_gap_pt=0)
+            ty += text_h(t, 12, inner, bold=True, ls=1.0, para_gap_pt=0)
+            sub = _first(it, "subtitle", "tag")
+            if sub:
+                ty += Inches(0.05)
+                pc_text(s, x + Inches(0.12), ty, inner, sub, size=9.5, bold=True, color=PC_LINE_BLUE, ls=1.0,
+                        para_gap_pt=0)
+                ty += text_h(sub, 9.5, inner, bold=True, ls=1.0, para_gap_pt=0)
+            d = _first(it, "description", "content")
+            if d:
+                ty += Inches(0.06)
+                pc_text(s, x + Inches(0.12), ty, inner, d, size=10, color=PC_SUB, ls=1.0, para_gap_pt=0)
+        flow.y = y + rh
+    return flow.slide
+
+
+# ---- 일정 한눈에(이미지 없는 일차별 요약 행) ----
+
+def build_pc_schedule(flow, sec):
+    heading = _s(sec.get("title")) or "일정 한눈에 보기"
+    items = [_item_dict(i) for i in _items(sec, "days", "schedule")]
+    items = [i for i in items if _first(i, "title", "description", "content")]
+    if not items:
+        return None
+    badge_w = Inches(0.78)
+    off = badge_w + Inches(0.16)
+    tw = PC_CW - off
+    first = True
+    for it in items:
+        day = _first(it, "day", "tag", "region_tag")
+        t = _first(it, "title")
+        d = _first(it, "description", "content")
+        t_h = text_h(t, 11.5, tw, bold=True, ls=1.0, para_gap_pt=0) if t else Emu(0)
+        d_h = pc_body_h(d, tw, size=10.5) if d else Emu(0)
+        h = max(Inches(0.34), t_h + (Inches(0.05) if (t and d) else 0) + d_h) + Inches(0.12)
+        if first:
+            y = _begin(flow, heading, sec.get("icon") or "calendar-days", h)
+            first = False
+        else:
+            y = flow.ensure(h, gap_before=Inches(0.0))
+        s = flow.slide
+        if day:
+            pill = _rect(s, MSO_SHAPE.ROUNDED_RECTANGLE, PC_PAGE_MARGIN, y + Inches(0.02), badge_w, Inches(0.3),
+                         fill=PC_NAVY)
+            pill.adjustments[0] = 0.5
+            _shape_text(pill, day, 10, WHITE, bold=True, margins=(0, 0, 0, 0))
+        ty = y
+        if t:
+            pc_text(s, PC_PAGE_MARGIN + off, ty + Inches(0.02), tw, t, size=11.5, bold=True, color=PC_BODY, ls=1.0,
+                    para_gap_pt=0)
+            ty += t_h + Inches(0.05)
+        if d:
+            pc_text(s, PC_PAGE_MARGIN + off, ty + Inches(0.02), tw, d, size=10.5, color=PC_SUB)
+        ln = s.shapes.add_connector(1, PC_PAGE_MARGIN, y + h - Inches(0.03), SLIDE_W - PC_PAGE_MARGIN,
+                                    y + h - Inches(0.03))
+        ln.line.color.rgb = RGBColor(0xD5, 0xDF, 0xEA)
+        ln.line.width = Pt(0.5)
+        flow.y = y + h
+    return flow.slide
+
+
+# ---- 마무리 한 줄(CTA 밴드) ----
+
+def build_pc_closing(flow, sec):
+    msg = _s(sec.get("message") or sec.get("content") or sec.get("title"))
+    kicker = _s(sec.get("kicker")) if sec.get("message") else ""
+    sub = _s(sec.get("sub") or sec.get("description"))
+    if not msg:
+        return None
+    inner = PC_CW - Inches(0.8)
+    k_h = text_h(kicker, 10.5, inner, ls=1.0, para_gap_pt=0) if kicker else Emu(0)
+    m_h = text_h(msg, 16, inner, bold=True, ls=1.05, para_gap_pt=0)
+    s_h = text_h(sub, 10.5, inner, ls=1.0, para_gap_pt=0) if sub else Emu(0)
+    h = Inches(0.32) + (k_h + Inches(0.08) if kicker else 0) + m_h + (Inches(0.1) + s_h if sub else 0) + Inches(0.32)
+    y = flow.ensure(h, gap_before=Inches(0.4))
+    s = flow.slide
+    band = _rect(s, MSO_SHAPE.SNIP_1_RECTANGLE, PC_PAGE_MARGIN, y, PC_CW, h, fill=PC_NAVY)
+    band.adjustments[0] = 0.15
+    ty = y + Inches(0.32)
+    if kicker:
+        pc_text(s, PC_PAGE_MARGIN + Inches(0.4), ty, inner, kicker, size=10.5, color=RGBColor(0x9F, 0xC0, 0xE0),
+                align=PP_ALIGN.CENTER, ls=1.0, para_gap_pt=0)
+        ty += k_h + Inches(0.08)
+    pc_text(s, PC_PAGE_MARGIN + Inches(0.4), ty, inner, msg, size=16, bold=True, color=WHITE,
+            align=PP_ALIGN.CENTER, ls=1.05, para_gap_pt=0)
+    ty += m_h
+    if sub:
+        pc_text(s, PC_PAGE_MARGIN + Inches(0.4), ty + Inches(0.1), inner, sub, size=10.5,
+                color=RGBColor(0xD5, 0xE2, 0xF0), align=PP_ALIGN.CENTER, ls=1.0, para_gap_pt=0)
+    flow.y = y + h
+    return s
+
+
+# ---- 일반 텍스트 / 표 ----
+
+def build_pc_text(flow, sec):
+    heading = _s(sec.get("title"))
+    content = _s(sec.get("content") or sec.get("description") or sec.get("message"))
+    if not (heading or content):
+        return None
+    n_img = 0
+    if sec.get("image_count") not in (None, "", 0, "0"):
+        n_img = _image_count(sec)
+    c_h = pc_body_h(content) if content else Emu(0)
+    need = (PC_IMG_H + Inches(0.12) if n_img else 0) + c_h
+    y = _begin(flow, heading or "안내", sec.get("icon") or "star", need if need else Inches(0.3))
+    if n_img:
+        pc_image_row(flow, y, flow.take_images(n_img))
+        y += PC_IMG_H + Inches(0.12)
+    if content:
+        pc_body(flow, y, content)
+        y += c_h
+    flow.y = y
+    return flow.slide
+
+
+def build_pc_table_block(flow, sec):
+    heading = _s(sec.get("title")) or "표로 정리했어요"
+    cols = [_s(c) for c in (sec.get("columns") or [])]
+    raw_rows = sec.get("rows") or []
+    rows = []
+    for r in raw_rows:
+        if isinstance(r, dict):
+            r = [r.get(c, "") for c in cols] if cols else list(r.values())
+        if isinstance(r, (list, tuple)):
+            rows.append([_s(c) for c in r])
+    if not rows:
+        return None
+    n_cols = max(len(cols), max(len(r) for r in rows))
+    rows = [r + [""] * (n_cols - len(r)) for r in rows]
+    header = bool(cols)
+    if header:
+        cols = cols + [""] * (n_cols - len(cols))
+        all_rows = [cols] + rows
+    else:
+        all_rows = rows
+    first_w = Inches(1.4) if n_cols > 2 else Inches(1.7)
+    if n_cols == 1:
+        widths = [PC_CW]
+    else:
+        rest = int((PC_CW - first_w) / (n_cols - 1))
+        widths = [PC_CW - rest * (n_cols - 1)] + [rest] * (n_cols - 1)
+    size = 9.5 if n_cols <= 4 else 9
+    heights = []
+    for ri, r in enumerate(all_rows):
+        mh = max(text_h(c, size, widths[ci] - Inches(0.14), bold=(ci == 0 or (header and ri == 0)), ls=1.0,
+                        para_gap_pt=0) for ci, c in enumerate(r))
+        heights.append(max(Inches(0.3), mh + Inches(0.14)))
+    note = _s(sec.get("note"))
+    note_h = text_h(note, 9.5, PC_CW, ls=1.0, para_gap_pt=0) if note else Emu(0)
+    # 페이지에 다 안 들어가면 머리글을 반복하며 나눠 그린다
+    i0 = 1 if header else 0
+    body_idx = list(range(i0, len(all_rows)))
+    pos = 0
+    first_chunk = True
+    while pos < len(body_idx):
+        head_h = heights[0] if header else Emu(0)
+        avail_base = flow.bottom_limit - flow.top - (PC_H1_H + Inches(0.18) if first_chunk else 0) - head_h
+        chunk, used = [], Emu(0)
+        for ix in body_idx[pos:]:
+            if used + heights[ix] > avail_base and chunk:
+                break
+            chunk.append(ix)
+            used += heights[ix]
+        # 현재 페이지 남은 공간에 첫 행들이 안 들어가면 새 페이지로
+        need_first = head_h + heights[chunk[0]]
+        if first_chunk:
+            y = _begin(flow, heading, sec.get("icon") or "list-checks", need_first)
+        else:
+            y = flow.ensure(need_first, gap_before=Inches(0.0))
+        # 현재 페이지 남은 높이만큼만 이번 조각에 담는다
+        room = flow.bottom_limit - y - head_h
+        take, used = [], Emu(0)
+        for ix in chunk:
+            if used + heights[ix] > room and take:
+                break
+            take.append(ix)
+            used += heights[ix]
+        rows_draw = ([all_rows[0]] if header else []) + [all_rows[ix] for ix in take]
+        hs = ([heights[0]] if header else []) + [heights[ix] for ix in take]
+        _pc_table(flow.slide, PC_PAGE_MARGIN, y, widths, rows_draw, hs, header=header, size=size,
+                  align=PP_ALIGN.LEFT)
+        flow.y = y + sum(hs)
+        pos += len(take)
+        first_chunk = False
+        if pos < len(body_idx):
+            flow.new_slide()
+    if note:
+        y = flow.ensure(note_h, gap_before=Inches(0.08))
+        pc_text(flow.slide, PC_PAGE_MARGIN, y, PC_CW, note, size=9.5, color=PC_SUB, ls=1.0, para_gap_pt=0)
+        flow.y = y + note_h
+    return flow.slide
+
+
+# ---- 기존 렌더러 어댑터 ----
+
+def _clean_item(it):
+    """어댑터가 넘기는 항목의 None 값을 빈 문자열로(렌더러가 "None"을 그리지 않도록)."""
+    d = dict(_item_dict(it))
+    for k, v in list(d.items()):
+        if v is None:
+            d[k] = ""
+    return d
+
+
+def _blk_background(flow, sec, ctx):
+    return build_pc_background(flow, {"title": _s(sec.get("title")), "content": _s(sec.get("content"))})
+
+
+def _blk_points(flow, sec, ctx):
+    items = [_clean_item(i) for i in _items(sec, "reasons")]
+    for it in items:
+        if "content" not in it and it.get("description"):
+            it["content"] = it["description"]
+    return build_pc_reasons(flow, items, product_name=ctx.get("product_name", ""),
+                            heading=_s(sec.get("title")) or None)
+
+
+def _blk_course(flow, sec, ctx):
+    items = []
+    for i in _items(sec, "destinations", "courses", "spots"):
+        d = _clean_item(i)
+        if "region_tag" not in d and d.get("tag"):
+            d["region_tag"] = d["tag"]
+        if "description" not in d and d.get("content"):
+            d["description"] = d["content"]
+        items.append(d)
+    return build_pc_destinations(flow, items, section_title=_s(sec.get("title")) or None,
+                                 icon=sec.get("icon") or "route", default_title="코스 하이라이트")
+
+
+def _blk_route_compare(flow, sec, ctx):
+    routes = sec.get("routes") or sec.get("items") or []
+    return build_pc_route_compare(flow, {"title": _s(sec.get("title")), "routes": routes})
+
+
+def _blk_spec_table(flow, sec, ctx):
+    specs = []
+    for i in _items(sec, "specs", "rows"):
+        if isinstance(i, dict):
+            specs.append({"label": _first(i, "label", "title", "name"), "value": _first(i, "value", "description")})
+        elif isinstance(i, (list, tuple)) and len(i) >= 2:
+            specs.append({"label": _s(i[0]), "value": _s(i[1])})
+    with_image = sec.get("image_count") not in (0, "0", False)
+    return build_pc_transport(flow, {"title": _s(sec.get("title")) or "스펙 한눈에 보기", "specs": specs},
+                              image_label="이미지", with_image=with_image, icon=sec.get("icon") or "list-checks")
+
+
+def _blk_service_cards(flow, sec, ctx):
+    items = []
+    for i in _items(sec, "points"):
+        items.append(_clean_item(i))
+    return build_pc_experience(flow, _s(sec.get("tagline")), items,
+                               heading=_s(sec.get("title")) or "혜초와 함께라면 더 특별한 이유")
+
+
+def _blk_guides(flow, sec, ctx):
+    items = []
+    for i in _items(sec, "guides"):
+        d = _clean_item(i)
+        if "name" not in d and d.get("title"):
+            d["name"] = d.pop("title")
+        if "bio" not in d and d.get("description"):
+            d["bio"] = d["description"]
+        items.append(d)
+    return build_pc_guide(flow, items, heading=_s(sec.get("title")) or "함께하는 사람들")
+
+
+def _blk_season(flow, sec, ctx):
+    table = sec.get("table") or sec.get("season_table") or []
+    season = {"title": _s(sec.get("title")) or "언제 가면 좋을까?", "content": _s(sec.get("content")),
+              "stat_line": _s(sec.get("stat_line"))}
+    return build_pc_season(flow, season, table)
+
+
+def _blk_qna(flow, sec, ctx):
+    pairs = []
+    for i in _items(sec, "qna", "faq"):
+        d = _item_dict(i)
+        q = _first(d, "question", "title")
+        a = _first(d, "answer", "description", "content")
+        if q:
+            pairs.append((d.get("icon") if d.get("icon") in ICON_KEYS else (pick_icon(q, a, None)), {"question": q, "answer": a}))
+    return build_pc_qna(flow, pairs, heading=_s(sec.get("title")) or "궁금증을 풀어드려요")
+
+
+_BLOCK_ALIASES = {
+    "background": "background", "story": "background", "intro": "background",
+    "points": "points", "reasons": "points", "why": "points", "why_reasons": "points",
+    "course": "course", "courses": "course", "destinations": "course", "spots": "course",
+    "tour_spots": "course", "trekking": "course",
+    "route_compare": "route_compare", "compare": "route_compare",
+    "spec_table": "spec_table", "specs": "spec_table", "transport": "spec_table", "transport_spec": "spec_table",
+    "service_cards": "service_cards", "services": "service_cards", "service": "service_cards",
+    "experience": "service_cards", "experience_points": "service_cards",
+    "guides": "guides", "guide": "guides", "guide_profile": "guides",
+    "season": "season", "qna": "qna", "faq": "qna",
+    "overview": "overview", "summary": "overview", "facts": "overview",
+    "audience": "audience", "recommend": "audience",
+    "highlights": "highlights", "highlight": "highlights",
+    "cards": "cards", "gallery": "cards",
+    "schedule": "schedule", "days": "schedule", "timeline": "schedule", "itinerary": "schedule",
+    "closing": "closing", "cta": "closing",
+    "text": "text", "paragraph": "text",
+    "list": "list", "checklist": "list", "bullets": "list",
+    "table": "table",
+}
+
+_BLOCK_RENDERERS = {
+    "background": _blk_background, "points": _blk_points, "course": _blk_course,
+    "route_compare": _blk_route_compare, "spec_table": _blk_spec_table,
+    "service_cards": _blk_service_cards, "guides": _blk_guides, "season": _blk_season, "qna": _blk_qna,
+    "overview": lambda f, s, c: build_pc_overview(f, s),
+    "audience": lambda f, s, c: build_pc_audience(f, s),
+    "highlights": lambda f, s, c: build_pc_highlights(f, s),
+    "cards": lambda f, s, c: build_pc_cards(f, s),
+    "schedule": lambda f, s, c: build_pc_schedule(f, s),
+    "closing": lambda f, s, c: build_pc_closing(f, s),
+    "text": lambda f, s, c: build_pc_text(f, s),
+    "list": lambda f, s, c: build_pc_list(f, s),
+    "table": lambda f, s, c: build_pc_table_block(f, s),
+}
+
+BLOCK_LABELS = {
+    "background": "배경 이야기", "points": "포인트(차별점)", "course": "코스/방문지", "route_compare": "노선 비교",
+    "spec_table": "스펙 표", "service_cards": "혜초 서비스 카드", "guides": "가이드 소개",
+    "season": "시즌 안내", "qna": "Q&A", "overview": "개요(핵심 정보)", "audience": "추천 대상",
+    "highlights": "하이라이트", "cards": "사진 카드", "schedule": "일정 한눈에", "closing": "마무리 문구",
+    "text": "텍스트", "list": "체크 리스트", "table": "표",
+}
+
+
+def normalize_block_type(t):
+    key = re.sub(r"[\s\-]+", "_", _s(t).lower())
+    return _BLOCK_ALIASES.get(key)
+
+
+def _build_generic_section(flow, sec):
+    """알 수 없는 블록 종류: 제목 + (본문 | 항목 리스트)로 최대한 그대로 보여준다."""
+    items = _items(sec)
+    if items:
+        return build_pc_list(flow, {"title": sec.get("title") or sec.get("type") or "안내", "items": items})
+    return build_pc_text(flow, sec)
+
+
+def build_pc_sections(flow, sections, ctx):
+    """sections를 순서대로 그린다. 한 블록이 오류를 내도 나머지는 계속 그리고, 실패한 블록은
+    일반 텍스트/리스트로 한 번 더 시도한다. 반환값: 그린 블록 수."""
+    drawn = 0
+    for sec in sections:
+        if not isinstance(sec, dict):
+            continue
+        kind = normalize_block_type(sec.get("type"))
+        fn = _BLOCK_RENDERERS.get(kind)
+        try:
+            res = fn(flow, sec, ctx) if fn else _build_generic_section(flow, sec)
+        except Exception:
+            try:
+                res = _build_generic_section(flow, sec)
+            except Exception:
+                res = None
+        if res:
+            drawn += 1
+    return drawn
+
+
 def build_legacy(content_json, out_path, review=None):
     """content_json(정현지 스키마) -> 새 PPTX 파일 생성.
     review(reviewer.review_content()의 반환값)를 넘기면 마지막에 검수 결과 페이지를
@@ -2359,6 +2983,17 @@ def build(content_json, out_path, review=None):
     flow = PCFlow(prs, footer_label=" ".join(str(cover.get("product_name", "")).split()))
 
     build_pc_cover(flow, cover, content_json.get("watermark_label", ""))
+    sections = content_json.get("sections")
+    if isinstance(sections, list) and sections:
+        # 상품별 동적 구성: AI가 고른 블록 순서대로 본문을 그린다.
+        ctx = {"product_name": cover.get("product_name", "")}
+        drawn = build_pc_sections(flow, sections, ctx)
+        if drawn:
+            build_banner_request_slide(flow, cover, content_json.get("banner_copy"), bar_color=PC_NAVY)
+            build_pc_review_notes(flow, review)
+            prs.save(out_path)
+            return prs
+    # sections가 없거나 하나도 못 그렸으면 예전 고정 구성으로 그린다(하위 호환)
     build_pc_background(flow, content_json.get("background_story"))
     build_pc_reasons(flow, content_json.get("why_reasons"), product_name=cover.get("product_name", ""))
     build_pc_destinations(flow, content_json.get("destinations", []),
