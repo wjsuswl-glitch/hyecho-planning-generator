@@ -67,22 +67,22 @@ BANNER_MAP_INCLUDE = {"박소설": True, "신윤정": True, "정현지": False, 
 # 필드를 추가/삭제할 땐 반드시 template_map.json도 같이 바꿀 것.
 SCHEMA_HINTS = {
     "정현지": """{
-  "cover": {"tagline": str, "tagline_options": [str, str, str], "product_name": str, "region_tag": str, "subtitle": str, "subtitle_options": [str, str, str], "intro_copy": str},
+  "cover": {"tagline": str, "tagline_options": [str, str, str], "product_name": str, "region_tag": str, "subtitle": str, "subtitle_options": [str, str, str], "tagline_option_types": [str, str, str], "subtitle_option_types": [str, str, str], "intro_copy": str},
   "watermark_label": str,
   "product_variant_type": str,
   "background_story": {"title": str, "content": str},
-  "why_reasons": [ {"title": str, "content": str} ],
+  "why_reasons": [ {"title": str, "content": str, "icon": str, "image_count": int} ],
   "destinations_heading": str,
-  "destinations": [ {"title": str, "description": str, "region_tag": str, "stats": str} ],
+  "destinations": [ {"title": str, "description": str, "region_tag": str, "stats": str, "image_count": int} ],
   "tour_spots_heading": str,
-  "tour_spots": [ {"title": str, "description": str, "region_tag": str} ],
+  "tour_spots": [ {"title": str, "description": str, "region_tag": str, "image_count": int} ],
   "route_compare": {
     "title": str,
     "routes": [ {"name": str, "course": str, "scenery": str, "appeal": str, "summary": str} ]
   },
   "transport_spec": {"title": str, "specs": [ {"label": str, "value": str} ]},
   "brand_tagline": str,
-  "experience_points": [ {"title": str, "description": str} ],
+  "experience_points": [ {"title": str, "description": str, "icon": str} ],
   "guide_profile": [ {"name": str, "title": str, "bio": str} ],
   "season": {"title": str, "content": str, "stat_line": str},
   "season_table": [ {"month": str, "high": str, "low": str, "rain": str} ],
@@ -188,6 +188,16 @@ SCHEMA_HINTS = {
   등급, 전용 이동수단(전용차량·전세버스 등) 중 사업부 자료에서 확인되는 항목 위주로
   구성하세요. 이 상품만의 장소·코스·계절 이야기는 절대 여기 쓰지 마세요 — 그건
   why_reasons의 역할입니다. why_reasons와 문장이 겹치면 안 됩니다.
+※ icon / image_count (기획안 화면 구성용 보조 필드 — 선택, 내용에는 영향 없음):
+  - icon: why_reasons·experience_points 항목을 한눈에 보여줄 아이콘 이름 하나. 반드시 아래 목록 중에서만
+    고르세요(목록 밖 값은 무시됨). 항목 제목의 핵심 소재와 가장 어울리는 것을 고르고, 모르겠으면 빈 문자열로 두세요.
+    mountain, mountain-snow, trees, flower-2, leaf, snowflake, sun, cloud-sun, waves, droplets, hotel,
+    bed-double, utensils, wine, coffee, soup, train-front, bus, plane, ship, footprints, map, map-pin,
+    compass, camera, star, heart, shield-check, users, clock, calendar-days, landmark, castle, church,
+    building-2, thermometer, ticket, wallet, sparkles, gem, sunrise, tent, backpack, route, binoculars,
+    umbrella, car, sailboat, flame, bath, hand-heart, badge-check, circle-check
+  - image_count: 그 항목에 디자이너가 넣을 사진 장수(1~3, 기본 2). 코스·방문지처럼 볼거리가 여러 장면이면 3,
+    단순 소개면 1~2. 모르겠으면 2.
 ※ guide_profile: 인솔자·가이드·담당자의 실제 이력(경력, 등정/순례 횟수, 자격 등)이
   사업부 자료에 있을 때만 채우세요. 있지도 않은 인물이나 이력을 지어내지 마세요. 없으면
   빈 배열로 두세요.
@@ -408,12 +418,19 @@ def build_system_prompt(writer_style, category, parsed_sections, format_info, ha
         "[표지 후보안 — tagline_options / subtitle_options]\n"
         "cover.tagline_options와 cover.subtitle_options에는 각각 서로 다른 표현의 후보안을 "
         "정확히 3개씩 배열로 담당자에게 보여주세요(담당자가 그중 하나를 골라 쓸 수 있도록). "
-        "3개는 같은 말을 살짝 바꾼 수준이 아니라 톤/각도가 서로 구별되게 만드세요(예: "
-        "감성적인 안 / 정보 중심 안 / 임팩트 있는 안). 그리고 cover.tagline과 cover.subtitle "
-        "(단수 필드)에는 반드시 그 3개 중 가장 추천하는 안, 즉 tagline_options[0]/"
-        "subtitle_options[0]과 완전히 동일한 문장을 넣으세요 — 이 단수 필드는 다른 슬라이드 "
-        "(배너 문구 등)에서 대표 카피로 그대로 재사용되므로 options 배열과 반드시 일치해야 "
-        "합니다."
+        "3개는 같은 말을 살짝 바꾼 수준이 아니라 접근 각도가 서로 구별되게 만드세요.\n"
+        "각 후보안이 어떤 각도로 쓰였는지 cover.tagline_option_types / cover.subtitle_option_types에 "
+        "같은 순서로 라벨을 적으세요(담당자 화면에 후보안 옆에 그대로 표시됩니다). 라벨은 반드시 "
+        "아래 중에서만 고르고, 한 필드 안의 3개 라벨은 서로 달라야 합니다:\n"
+        "  - 감성형: 풍경·분위기·느낌을 감각적으로 그리는 문장\n"
+        "  - 정보형: 코스·일정·숙박 등 실제 구성(숫자 포함 가능)을 담백하게 전하는 문장\n"
+        "  - 혜택형: 노쇼핑·단독 코스·연박 등 고객이 얻는 이점을 앞세우는 문장\n"
+        "  - 임팩트형: 희소성·단호함·한 줄 훅으로 시선을 끄는 문장\n"
+        "  - 질문형: 독자에게 말을 거는 의문문·청유형 문장\n"
+        "그리고 cover.tagline과 cover.subtitle(단수 필드)에는 반드시 그 3개 중 가장 추천하는 안, "
+        "즉 tagline_options[0]/subtitle_options[0]과 완전히 동일한 문장을 넣으세요(첫 번째 안이 "
+        "'추천안'으로 표시됩니다) — 이 단수 필드는 다른 슬라이드(배너 문구 등)에서 대표 카피로 "
+        "그대로 재사용되므로 options 배열과 반드시 일치해야 합니다."
     )
 
     prompt = f"""역할: 당신은 혜초여행사 콘텐츠팀의 {writer_style} 기획자입니다.
@@ -439,8 +456,13 @@ web_search 도구를 사용할 수 있습니다. 사업부 자료에 없는 배�
 
 [고정 문구 뱅크 — experience_points 전용]
 "혜초와 함께하면", "No 쇼핑! No 옵션!", "전 일정 인솔자 동행"
-→ experience_points에서만 문맥에 자연스럽게 녹여 쓰되 남발하지 않음. why_reasons에는
-이 문구들을 쓰지 마세요 (역할이 다릅니다 — 위 experience_points/why_reasons 설명 참고).
+→ experience_points에서만 쓰되 남발하지 않음. why_reasons에는 이 문구들을 쓰지 마세요
+(역할이 다릅니다 — 위 experience_points/why_reasons 설명 참고).
+→ "혜초와 함께하면"은 experience_points[].description 안에서 문맥에 자연스럽게 녹일 때만 쓰세요.
+experience_points[].title에는 쓰지 마세요 — 카드 제목은 "혜초와 함께하면, 리조트형 4성급 호텔 연박"처럼
+앞머리 문구가 붙으면 무슨 말인지 흐려집니다. 제목은 고객이 얻는 이점 자체를 짧은 명사구로
+쓰세요(예: "리조트형 4성급 호텔 연박", "전 일정 인솔자 동행", "No 쇼핑! No 옵션!"). 그 이점이
+왜 좋은지(편안함, 안전, 시간 절약 등)는 description에서 풀어 쓰세요.
 
 {copy_instruction}
 
@@ -650,7 +672,7 @@ Best 6"). 이 시스템은 그 줄바꿈을 배지 스타일로 렌더링합니�
 
 [표지 후보안 필드 — cover.tagline_options / cover.subtitle_options]
 이 작업은 새 카피를 창작하는 게 아니라 기존 이미지 내용을 그대로 옮기는 작업이므로,
-tagline_options/subtitle_options는 여러 안을 새로 만들지 말고 빈 배열 [] 로 두세요.
+tagline_options/subtitle_options와 tagline_option_types/subtitle_option_types는 여러 안을 새로 만들지 말고 빈 배열 [] 로 두세요.
 cover.tagline/cover.subtitle(단수 필드)에만 이미지에 있는 문구를 그대로(또는 위
 [절대 원칙 2]에 따라 간결하게 정리해서) 채우면 됩니다.
 
