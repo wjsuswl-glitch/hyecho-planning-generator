@@ -258,11 +258,38 @@ if uploaded_files and st.button("생성하기", type="primary"):
             f"[{k}]\n{v}" for k, v in sections.items()
         )
 
+        def _show_composition(version_content, tag=""):
+            """PC 기획안: AI가 이 상품에 맞춰 고른 구성(블록 순서)과 그 이유를 보여준다.
+            마음에 안 들면 위 '기획자 요청사항' 칸에 원하는 구성을 적고 다시 생성하면 된다."""
+            secs = version_content.get("sections") if isinstance(version_content, dict) else None
+            if is_mobile or not isinstance(secs, list) or not secs:
+                return
+            labels = dynamic_builder.BLOCK_LABELS
+            with st.expander(f"🧩 이 상품의 구성과 이유{tag} ({len(secs)}개 섹션)", expanded=True):
+                note = (version_content.get("composition_note") or "").strip()
+                if note:
+                    st.markdown(f"**구성 방향** — {note}")
+                for i, sec in enumerate(secs, 1):
+                    if not isinstance(sec, dict):
+                        continue
+                    kind = dynamic_builder.normalize_block_type(sec.get("type"))
+                    kind_label = labels.get(kind, "기타(일반 표시)")
+                    title = (sec.get("title") or sec.get("message") or "").strip().replace("\n", " ")
+                    why = (sec.get("why") or "").strip()
+                    line = f"{i}. **{title or kind_label}** · {kind_label}"
+                    if why:
+                        line += f"  \n   ↳ {why}"
+                    st.markdown(line)
+                st.caption("구성이 마음에 안 들면 '기획자 요청사항'에 원하는 구성을 적고 다시 생성하세요. "
+                           "(예: '식사 섹션을 앞쪽으로', '추천 대상은 빼주세요', '일정은 표로 보여주세요')")
+
         def _process_version(version_content, version_label=None):
             """검수 → PPTX 조립 → 다운로드 버튼까지, 콘텐츠 한 벌(=한 버전)에 대해
             수행한다. 단일 버전 상품은 이 함수를 한 번만 부르고, "봄/가을 2개 버전"처럼
             사업부 자료가 다중 버전을 명시적으로 요청한 상품은 버전마다 한 번씩 부른다."""
             tag = f" — {version_label}" if version_label else ""
+
+            _show_composition(version_content, tag)
 
             if is_mobile:
                 # 모바일 모드는 사업부 문서(source_material_text)가 없어 Gemini
