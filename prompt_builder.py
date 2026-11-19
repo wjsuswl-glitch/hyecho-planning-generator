@@ -311,6 +311,105 @@ BRAND_WORD_BANS = {
 }
 
 
+# ---- PC 기획안 "상품별 동적 구성" (2026-11) -------------------------------------------------
+# 예전에는 모든 상품이 같은 고정 키(background_story/why_reasons/destinations/...)를 채워
+# 똑같은 순서로 나왔다. 이제 PC 기획안은 표지·배너·검수 페이지만 고정이고, 그 사이 본문은
+# AI가 사업부 자료를 읽고 아래 "블록 라이브러리"에서 골라 순서대로 배열한 sections로 만든다.
+# 블록 이름/필드는 builder.py의 build_pc_sections()와 반드시 일치해야 한다.
+_LEGACY_NOTES = SCHEMA_HINTS["정현지"][SCHEMA_HINTS["정현지"].index("\n※"):]
+
+PC_SECTIONS_SCHEMA = """{
+  "cover": {"tagline": str, "tagline_options": [str, str, str], "product_name": str, "region_tag": str, "subtitle": str, "subtitle_options": [str, str, str], "tagline_option_types": [str, str, str], "subtitle_option_types": [str, str, str], "intro_copy": str},
+  "watermark_label": str,
+  "product_variant_type": str,
+  "composition_note": str,
+  "sections": [ {"type": 블록종류, "title": str, "why": str, ... 블록별 필드 ...}, ... ],
+  "banner_copy": {"kicker": str, "title": str}
+}
+
+[본문 구성 — 이 상품에 맞게 블록을 골라 배열하세요]
+표지(cover)와 배너(banner_copy)는 고정이고, 그 사이의 본문은 sections 배열로 직접 구성합니다.
+모든 상품을 같은 순서·같은 섹션으로 만들지 마세요 — 사업부 자료를 읽고 이 상품의 성격(트레킹,
+문화탐방, 미식, 크루즈·열차, 휴양, 성지순례 등)과 자료에 실제로 있는 내용에 맞춰 필요한 블록만
+고르고, 고객이 읽는 흐름에 맞게 순서와 섹션 제목(title)을 정하세요.
+
+사용할 수 있는 블록(type) — 아래 목록 밖의 type은 쓰지 마세요:
+ 1. overview   — 핵심 정보 한눈에(기간·지역·난이도·이동·숙박 등 4~6칸) + 지도 자리.
+    {"type":"overview","title":str,"intro":str(선택),"facts":[{"label":str,"value":str,"icon":str}],"map":true|false}
+    value는 사업부 자료에 있는 사실만. 긴 문장 말고 짧은 값("10일", "초·중급", "전용 차량")으로.
+ 2. background — 여행지·테마의 배경/역사/유래 한 문단.
+    {"type":"background","title":str,"content":str}
+ 3. highlights — 이 여행의 하이라이트 장면들(소제목 + 굵은 핵심 키워드 + 사진 자리 + 본문).
+    {"type":"highlights","title":str,"items":[{"kicker":str,"keyword":str,"description":str,"image_count":int}]}
+ 4. points — 번호 붙은 "이 상품만의 포인트 N가지"(사진 자리 + 본문). 아래 why_reasons 규칙을 따름.
+    {"type":"points","title":str,"items":[{"title":str,"content":str,"icon":str,"image_count":int}]}
+ 5. course — 코스/방문지/식당 순서 목록(그룹 라벨·일차 배지·스펙 칩·사진 자리·본문).
+    {"type":"course","title":str,"icon":str,"items":[{"title":str,"description":str,"region_tag":str,"stats":str,"image_count":int}]}
+    같은 type을 여러 번 써도 됩니다(예: 트레킹 코스 / 함께 즐기는 관광 코스).
+ 6. schedule — 일차별 한 줄 요약(사진 없는 간단한 일정표).
+    {"type":"schedule","title":str,"items":[{"day":"1일차","title":str,"description":str}]}
+ 7. cards — 사진 카드 2열(메뉴·맛집·숙소·객실·체험 등 "하나하나 보여줄 것"이 여럿일 때).
+    {"type":"cards","title":str,"icon":str,"columns":2,"items":[{"title":str,"subtitle":str,"description":str}]}
+ 8. audience — 이런 분께 추천해요(아이콘 카드 3~4개).
+    {"type":"audience","title":str,"items":[{"title":str,"description":str,"icon":str}]}
+ 9. route_compare — 대안 코스/노선 비교표(자료에 비교할 대안이 있을 때만).
+    {"type":"route_compare","title":str,"routes":[{"name":str,"course":str,"scenery":str,"appeal":str,"summary":str}]}
+10. spec_table — 열차·크루즈·숙소 등의 스펙 표(자료에 실제 스펙이 있을 때만).
+    {"type":"spec_table","title":str,"image_count":1,"items":[{"label":str,"value":str}]}
+11. season — 시즌/날씨 안내(최적기 배너 + 설명 + 월별 기온표).
+    {"type":"season","title":str,"stat_line":str,"content":str,"table":[{"month":str,"high":str,"low":str,"rain":str}]}
+12. qna — 궁금증 Q&A 카드(식사, 난이도·체력, 준비물, 날씨 등 고객이 자주 묻는 것).
+    {"type":"qna","title":str,"items":[{"icon":str,"question":str,"answer":str}]}
+13. guides — 인솔자·가이드 소개(자료에 실제 이력이 있을 때만).
+    {"type":"guides","title":str,"items":[{"name":str,"title":str,"bio":str}]}
+14. service_cards — 혜초 공통 서비스 카드(아래 experience_points 규칙). 상품당 0~1회.
+    {"type":"service_cards","title":str,"tagline":str,"items":[{"title":str,"description":str,"icon":str}]}
+15. closing — 맨 끝 마무리 한 줄(CTA 밴드). 0~1회, 반드시 마지막 블록.
+    {"type":"closing","kicker":str(선택),"message":str,"sub":str(선택)}
+    message는 여행의 느낌을 담은 감성 한 줄입니다. "출발 일정은 상품 페이지에서 확인하세요", "문의·예약 안내",
+    "자세한 내용은 ~에서 확인" 같은 안내·행정 문구는 기획안 어디에도 쓰지 마세요(고객이 이미 상품
+    페이지에서 보고 있는 화면입니다). sub는 꼭 필요할 때만 쓰고, 보통은 비워 두세요.
+16. text — 자유 문단(위 블록에 안 맞는 설명). {"type":"text","title":str,"content":str,"image_count":int(선택),"icon":str}
+17. list — 체크 리스트/포함·특전·준비물 등 항목 나열. {"type":"list","title":str,"items":[str 또는 {"title":str,"description":str}]}
+18. table — 자유 표(식사 구성, 호텔 목록, 요금표, 일정 비교 등).
+    {"type":"table","title":str,"columns":[str,...],"rows":[[str,...],...],"note":str(선택)}
+
+구성 원칙:
+- 6~12개 블록이 적당합니다. 자료가 빈약한 상품은 적게, 풍부한 상품은 많게. 억지로 채우지 마세요.
+- 사업부 자료에 근거가 없는 블록은 만들지 마세요(예: 인솔자 이력이 없으면 guides 없음, 비교할 대안
+  코스가 없으면 route_compare 없음, 스펙이 없으면 spec_table 없음). 없는 사실을 지어내지 마세요.
+- 같은 내용을 두 블록에 반복하지 마세요(points·highlights·service_cards·audience가 같은 말을
+  바꿔 쓰는 일이 없도록). 한 내용은 가장 잘 맞는 블록 한 곳에만 두세요.
+- 첫 블록은 이 상품에서 고객이 가장 먼저 궁금해할 것으로 정하세요(예: 트레킹은 overview, 테마
+  여행은 background나 highlights, 미식은 cards나 highlights).
+- 코스/일정이 핵심인 상품은 course나 schedule 중 최소 하나는 반드시 포함하세요.
+- 섹션 제목(title)은 "방문지 하이라이트"처럼 기계적인 이름보다 이 상품에 맞는 말로 쓰세요
+  (예: "식탁 위의 호쿠리쿠", "걷는 만큼 달라지는 풍경"). 단, 상품명이나 표지 카피를 그대로 반복하지 마세요.
+- 상품 유형별 참고 레시피(강제 아님, 자료에 맞게 가감):
+  · 트레킹: overview → background → highlights → course(+ 관광 코스는 course 한 번 더) → audience → season → qna(난이도·식사) → service_cards → closing
+  · 문화탐방: background → points → course(그룹 라벨 활용) → cards(미술관·유적 등) → guides → qna → service_cards
+  · 미식/온천/휴양: overview → text 또는 background → cards(식사·숙소) → schedule → list(포함 사항) → audience → closing
+  · 크루즈/열차: highlights → spec_table → schedule → cards(객실·다이닝) → route_compare → qna
+  · 성지순례/도보: background → course → schedule → qna(체력·준비) → guides → season
+- 기획자 요청사항이 있으면 구성(강조할 블록, 뺄 블록)에도 반영하세요.
+
+composition_note와 why (기획자 확인용 — 고객 화면에는 나오지 않습니다):
+- composition_note: 이 상품을 왜 이런 구성으로 짰는지 1~2문장(예: "고산 트레킹이라 난이도·일정을
+  먼저 보여주고, 코스를 일차별로 길게 풀었습니다.").
+- 각 섹션의 why: 그 블록을 왜 골랐고 왜 그 자리에 뒀는지 한 문장. 반드시 채우세요.
+- composition_note와 why는 메타 설명이 허용되는 유일한 필드입니다(나머지 필드는 고객에게 보이는
+  마케팅 카피여야 함).
+
+[필드별 작성 규칙 — 아래 규칙은 해당 블록의 필드에 그대로 적용하세요]
+아래 설명에 나오는 옛 필드 이름은 다음 블록으로 읽으세요(옛 최상위 키는 출력하지 않습니다):
+background_story→background 블록, why_reasons→points 블록, destinations/tour_spots→course 블록,
+route_compare→route_compare 블록, transport_spec→spec_table 블록, experience_points/brand_tagline→
+service_cards 블록(items/tagline), guide_profile→guides 블록, season/season_table→season 블록(table),
+meal_info/safety_note→qna 블록의 항목, destinations_heading/tour_spots_heading→해당 course 블록의 title.
+[Few-shot 예시]의 "sections"는 사람이 만든 기획안의 구성을 보여주는 참고 자료일 뿐 출력 형식이
+아닙니다 — 출력의 sections는 위 블록 형식을 따르세요(예시의 섹션 구성은 어떤 블록을 고를지 참고).""" + _LEGACY_NOTES
+
+
 PLANNER_REQUEST_LABELS = [
     ("tone", "전체 톤앤매너"),
     ("emphasize", "강조하면 좋은 부분"),
@@ -433,6 +532,15 @@ def build_system_prompt(writer_style, category, parsed_sections, format_info, ha
         "그대로 재사용되므로 options 배열과 반드시 일치해야 합니다."
     )
 
+    use_sections = "destinations" in SCHEMA_HINTS.get(writer_style, "")
+    schema_text = PC_SECTIONS_SCHEMA if use_sections else SCHEMA_HINTS.get(writer_style, "(스키마 미정의 — 담당자에게 문의)")
+    if use_sections:
+        layout_rule = ""
+    else:
+        layout_rule = ("[레이아웃 규칙]\nwhy_reasons와 season 섹션은 "
+                       + ("같은 슬라이드에 합쳐서" if LAYOUT_HINT[writer_style] == "combined" else "별도 슬라이드로 나눠서")
+                       + " 구성하세요.\n")
+
     prompt = f"""역할: 당신은 혜초여행사 콘텐츠팀의 {writer_style} 기획자입니다.
 
 [스타일 규칙]
@@ -440,8 +548,7 @@ def build_system_prompt(writer_style, category, parsed_sections, format_info, ha
 
 {brand_word_ban_instruction(category)}
 
-[레이아웃 규칙]
-why_reasons와 season 섹션은 {"같은 슬라이드에 합쳐서" if LAYOUT_HINT[writer_style]=="combined" else "별도 슬라이드로 나눠서"} 구성하세요.
+{layout_rule}
 
 [웹 검색 도구]
 web_search 도구를 사용할 수 있습니다. 사업부 자료에 없는 배경지식·역사·지리적 사실이
@@ -505,7 +612,7 @@ experience_points[].title에는 쓰지 마세요 — 카드 제목은 "혜초와
 여행 상품을 소개하는 마케팅 카피여야 합니다.
 
 스키마 (이 구조를 정확히 따르세요. 필드를 빼거나 이름을 바꾸지 마세요):
-{SCHEMA_HINTS.get(writer_style, "(스키마 미정의 — 담당자에게 문의)")}
+{schema_text}
 
 {DESTINATIONS_RULE if "destinations" in SCHEMA_HINTS.get(writer_style, "") else ""}
 
