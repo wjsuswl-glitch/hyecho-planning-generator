@@ -1121,7 +1121,7 @@ def build_mobile_qna_slide(flow, qna_pairs, heading="궁금증을 풀어드려�
     return slide
 
 
-def build_banner_request_slide(flow, cover, banner_copy=None):
+def build_banner_request_slide(flow, cover, banner_copy=None, bar_color=None):
     """배너 기획 페이지 — 실제 회사 배너제작 템플릿(배너제작.pptx)의 레이아웃을
     그대로 재현. 4개 배너 슬롯(메인 와이드/서브메인 띠/서브메인 2단/지역 리스트)에
     각각 이미지 자리와 '태그라인+타이틀' 텍스트를 넣는다. 스펙 라벨/안내 문구는
@@ -1167,7 +1167,16 @@ def build_banner_request_slide(flow, cover, banner_copy=None):
             y += h
         return y
 
-    add_section_bar(slide, Inches(0), "배너 기획", height=Inches(0.47), size=14)
+    if bar_color is None:
+        add_section_bar(slide, Inches(0), "배너 기획", height=Inches(0.47), size=14)
+    else:  # PC 정돈형: 페이지 폭 전체 네이비 바
+        bar = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, SLIDE_W, Inches(0.47))
+        bar.fill.solid()
+        bar.fill.fore_color.rgb = bar_color
+        bar.line.fill.background()
+        bar.shadow.inherit = False
+        bar.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
+        _tf_setup(bar.text_frame, "배너 기획", 14, WHITE, bold=True, align=PP_ALIGN.CENTER)
     add_text(slide, Inches(0.106), Inches(0.675), Inches(1.717), Inches(0.404),
               "배너제작요청", size=13, bold=True)
     add_text(slide, Inches(1.823), Inches(0.733), Inches(4.672), Inches(0.303),
@@ -1262,7 +1271,1032 @@ def build_review_notes_slide(flow, review):
     return slides
 
 
-def build(content_json, out_path, review=None):
+# ===========================================================================
+# PC 정돈형 레이아웃 (2026-11) — build()가 사용한다. (모바일 build_mobile은 위쪽의 기존 함수 그대로)
+#
+# 담당자 피드백: "제작되는 기획안이 디자이너가 보기도 힘들고 정돈되지 않은 느낌" →
+#   (1) 글자 크기·가독성  (2) 이미지 자리 구분(번호)  (3) 제목 스타일 불일치  (4) 여백·균형
+#   (5) 포인트 부분은 아이콘 활용
+# 사람이 만든 기획안(돌로미테 Part.2, 호쿠리쿠)의 구조를 기준으로 다시 짰다:
+#   - 제목 위계 통일: H1 = 모서리를 자른 네이비 바(섹션), H2 = 번호 탭(포인트 항목),
+#     그룹 바 = 옅은 파란 바 + 네이비 세로선, 코스 항목 = 번호 원 + 제목
+#   - 이미지 자리는 문서 전체에서 "이미지 1, 이미지 2 …" 연번 + 항목당 장수(image_count, 기본 2)
+#   - 본문은 왼쪽 정렬 11pt 진한 글씨(예전: 가운데 정렬 12pt 옅은 회색), 문단(\n) 사이 간격
+#   - 섹션 통째로 다음 장으로 넘기지 않고 항목 단위로 이어 붙여 장 하단 빈 공간을 줄임
+#     (제목만 장 끝에 홀로 남지 않도록 "제목 + 첫 항목"을 함께 확보)
+#   - 아이콘: icons_data.py(lucide ISC 아이콘 마스크, 실행 시 네이비/흰색 입힘). AI가 icon 키를
+#     주면 쓰고, 없으면 제목·설명 키워드로 추정(pick_icon)해서 기존 JSON에도 아이콘이 붙는다.
+# ===========================================================================
+import os
+import re
+
+from pptx.enum.dml import MSO_LINE
+
+PC_NAVY = RGBColor(0x22, 0x2A, 0x35)       # 사람 기획안 섹션 탭 색(tx2 50%)
+PC_LINE_BLUE = RGBColor(0x41, 0x71, 0x9C)   # 사람 기획안 이미지 자리 테두리 색
+PC_PALE = RGBColor(0xEE, 0xF3, 0xF8)        # 이미지 자리/칩/그룹 바 배경
+PC_PALE_BAR = RGBColor(0xE3, 0xEB, 0xF3)
+PC_BODY = RGBColor(0x2B, 0x2B, 0x2B)
+PC_SUB = RGBColor(0x5A, 0x5A, 0x5A)
+PC_PAGE_MARGIN = Inches(0.45)
+PC_CW = SLIDE_W - PC_PAGE_MARGIN * 2
+PC_BODY_SIZE = 11
+PC_LS = 1.08                                 # 본문 줄간격 배수
+PC_LINE_H = 1.38                             # 한 줄 높이 ≈ 글자크기 × 1.38 × 줄간격 (맑은 고딕+대체폰트 여유)
+PC_PARA_GAP_PT = 5
+
+ICON_KEYS = [
+    "mountain", "mountain-snow", "trees", "flower-2", "leaf", "snowflake", "sun", "cloud-sun", "waves",
+    "droplets", "hotel", "bed-double", "utensils", "wine", "coffee", "soup", "train-front", "bus", "plane",
+    "ship", "footprints", "map", "map-pin", "compass", "camera", "star", "heart", "shield-check", "users",
+    "clock", "calendar-days", "landmark", "castle", "church", "building-2", "thermometer", "ticket",
+    "wallet", "sparkles", "gem", "sunrise", "tent", "backpack", "route", "binoculars", "umbrella", "car",
+    "sailboat", "flame", "bath", "hand-heart", "badge-check", "circle-check", "image", "circle-help",
+    "thumbs-up", "ban", "gift",
+]
+
+# (키워드들, 아이콘) — 위에서부터 먼저 맞는 규칙을 쓴다. 제목을 먼저, 없으면 설명을 본다.
+_ICON_RULES = [
+    (("노쇼핑", "노옵션", "쇼핑", "옵션"), "badge-check"),
+    (("인솔", "동행", "가이드", "전문가", "인솔자"), "users"),
+    (("온천", "힐링", "스파"), "bath"),
+    (("호텔", "숙박", "리조트", "롯지", "휴양", "휴식", "연박"), "hotel"),
+    (("와인", "맥주", "양조"), "wine"),
+    (("카페", "커피"), "coffee"),
+    (("식사", "미식", "음식", "요리", "맛집", "레스토랑", "산해진미", "별미"), "utensils"),
+    (("기차", "열차", "철도", "트램", "빙하특급"), "train-front"),
+    (("케이블카", "곤돌라", "리프트"), "route"),
+    (("버스", "전용차", "차량"), "bus"),
+    (("항공", "직항", "비행"), "plane"),
+    (("크루즈", "선박", "페리", "유람선"), "ship"),
+    (("설산", "빙하", "설경", "만년설", "눈"), "mountain-snow"),
+    (("호수", "폭포", "계곡", "강", "해변", "바다"), "waves"),
+    (("꽃", "야생화", "단풍", "벚꽃", "정원", "튤립"), "flower-2"),
+    (("숲", "초원", "자연", "나무"), "trees"),
+    (("일출", "일몰", "노을", "전망", "파노라마", "뷰"), "sunrise"),
+    (("사진", "포토", "촬영"), "camera"),
+    (("유적", "문화", "역사", "사원", "성당", "교회", "박물관", "유네스코", "세계유산"), "landmark"),
+    (("안전", "보험", "안심"), "shield-check"),
+    (("산", "암봉", "봉우리", "트레킹", "능선", "고원", "등반", "산행"), "mountain"),
+    (("당일", "시간", "일정", "여유", "소요"), "clock"),
+    (("지도", "루트", "코스", "노선"), "route"),
+    (("가족", "친구", "커플", "함께"), "heart"),
+    (("특별", "프리미엄", "단독", "최초", "유일", "완성"), "sparkles"),
+    (("텐트", "캠핑", "야영"), "tent"),
+]
+
+
+def pick_icon(title="", description="", hint=None):
+    """AI가 준 icon 키(hint)가 목록에 있으면 그걸, 아니면 제목→설명 순으로 키워드를 훑어 추정."""
+    if hint and str(hint).strip() in ICON_KEYS:
+        return str(hint).strip()
+    for text in (title or "", description or ""):
+        for words, key in _ICON_RULES:
+            if any(w in text for w in words):
+                return key
+    return "star"
+
+
+_ICON_CACHE = {}
+
+
+def _icon_png(key, white=False):
+    """icons_data.ICON_MASKS의 알파 마스크에 색(네이비/흰색)을 입혀 PNG 바이트로 돌려준다(캐시)."""
+    ck = (key, white)
+    if ck in _ICON_CACHE:
+        return _ICON_CACHE[ck]
+    data = None
+    try:
+        import base64
+        import io as _io
+        from PIL import Image
+        from icons_data import ICON_MASKS
+        mask_b64 = ICON_MASKS.get(key)
+        if mask_b64:
+            mask = Image.open(_io.BytesIO(base64.b64decode(mask_b64))).convert("L")
+            color = (255, 255, 255, 255) if white else (0x22, 0x2A, 0x35, 255)
+            img = Image.new("RGBA", mask.size, color)
+            img.putalpha(mask)
+            buf = _io.BytesIO()
+            img.save(buf, "PNG")
+            data = buf.getvalue()
+    except Exception:
+        data = None  # 아이콘은 장식 요소 — 실패해도 기획안 생성은 계속한다
+    _ICON_CACHE[ck] = data
+    return data
+
+
+def add_icon(slide, key, left, top, size, white=False):
+    data = _icon_png(key, white)
+    if not data:
+        return None
+    import io as _io
+    return slide.shapes.add_picture(_io.BytesIO(data), left, top, size, size)
+
+
+# ---- 텍스트 측정(글자 종류별 폭 + 단어 단위 줄바꿈 시뮬레이션) -------------------------
+
+def _char_w(ch, bold):
+    o = ord(ch)
+    if ch == " ":
+        w = 0.30
+    elif (0xAC00 <= o <= 0xD7A3 or 0x3130 <= o <= 0x318F or 0x4E00 <= o <= 0x9FFF
+          or 0x3000 <= o <= 0x303F or 0xFF00 <= o <= 0xFFEF or 0x2460 <= o <= 0x27BF):
+        w = 0.97
+    elif ch.isdigit():
+        w = 0.56
+    elif ch.isascii() and ch.isalpha():
+        w = 0.62 if ch.isupper() else 0.54
+    elif ch in ".,:;'!|":
+        w = 0.32
+    elif ch in "·()[]-~/":
+        w = 0.42
+    elif ch in "‘’“”":
+        w = 0.5
+    else:
+        w = 0.7
+    return w * (1.04 if bold else 1.0)
+
+
+def _word_w(word, bold):
+    return sum(_char_w(c, bold) for c in word)
+
+
+def count_lines(text, size_pt, width_emu, bold=False):
+    """줄바꿈 후 총 줄 수(문단별 합). 공백 기준으로 단어를 채우고, 한 단어가 한 줄보다
+    길면 글자 단위로 끊는다. 약간(4%) 보수적으로 잡는다."""
+    width_pt = Emu(width_emu).pt / 1.02
+    total = 0
+    for para in str(text).split("\n"):
+        if not para.strip():
+            total += 1
+            continue
+        lines, cur = 1, 0.0
+        for word in re.findall(r"\S+\s*|\s+", para):
+            ww = _word_w(word, bold) * size_pt
+            ww_trim = _word_w(word.rstrip(), bold) * size_pt
+            if cur + ww_trim <= width_pt:
+                cur += ww
+                continue
+            if cur > 0:
+                lines += 1
+                cur = 0.0
+            if ww_trim > width_pt:  # 한 단어가 한 줄보다 길다 -> 글자 단위
+                for ch in word:
+                    cw = _char_w(ch, bold) * size_pt
+                    if cur + cw > width_pt:
+                        lines += 1
+                        cur = 0.0
+                    cur += cw
+            else:
+                cur = ww
+        total += lines
+    return total
+
+
+def text_h(text, size_pt, width_emu, bold=False, ls=PC_LS, para_gap_pt=PC_PARA_GAP_PT):
+    if not text:
+        return Emu(0)
+    n_para = len(str(text).split("\n"))
+    lines = count_lines(text, size_pt, width_emu, bold)
+    pt = lines * size_pt * PC_LINE_H * ls + (n_para - 1) * para_gap_pt + 2
+    return Pt(pt)
+
+
+def pc_text(slide, left, top, width, text, size=PC_BODY_SIZE, color=PC_BODY, bold=False,
+            align=PP_ALIGN.LEFT, ls=PC_LS, para_gap_pt=PC_PARA_GAP_PT, anchor=MSO_ANCHOR.TOP):
+    """여백 0인 텍스트 박스를 만들고, 측정한 높이를 돌려준다(박스 높이 = 측정 높이)."""
+    h = text_h(text, size, width, bold=bold, ls=ls, para_gap_pt=para_gap_pt)
+    box = slide.shapes.add_textbox(left, top, width, h)
+    tf = box.text_frame
+    tf.word_wrap = True
+    tf.margin_left = tf.margin_right = tf.margin_top = tf.margin_bottom = 0
+    tf.vertical_anchor = anchor
+    lines = str(text).split("\n")
+    for i, line in enumerate(lines):
+        p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+        p.alignment = align
+        p.line_spacing = ls
+        if i < len(lines) - 1:
+            p.space_after = Pt(para_gap_pt)
+        r = p.add_run()
+        r.text = line
+        r.font.size = Pt(size)
+        r.font.bold = bold
+        r.font.color.rgb = color
+        r.font.name = FONT_NAME
+    return h
+
+
+def _rect(slide, shape, left, top, width, height, fill=None, line=None, line_w=0.75, dash=False):
+    s = slide.shapes.add_shape(shape, left, top, width, height)
+    s.shadow.inherit = False
+    for er in s._element.iter("{http://schemas.openxmlformats.org/drawingml/2006/main}effectRef"):
+        er.set("idx", "0")  # 테마 그림자 참조 제거(LibreOffice 등 일부 뷰어가 effectLst를 무시하는 경우 대비)
+    if fill is None:
+        s.fill.background()
+    else:
+        s.fill.solid()
+        s.fill.fore_color.rgb = fill
+    if line is None:
+        s.line.fill.background()
+    else:
+        s.line.color.rgb = line
+        s.line.width = Pt(line_w)
+        if dash:
+            s.line.dash_style = MSO_LINE.DASH
+    return s
+
+
+def _shape_text(shape, text, size, color, bold=False, align=PP_ALIGN.CENTER,
+                anchor=MSO_ANCHOR.MIDDLE, margins=(0.08, 0.02, 0.08, 0.02)):
+    tf = shape.text_frame
+    tf.word_wrap = True
+    tf.vertical_anchor = anchor
+    tf.margin_left, tf.margin_top, tf.margin_right, tf.margin_bottom = [Inches(m) for m in margins]
+    _tf_setup(tf, text, size, color, bold=bold, align=align)
+
+
+# ---- 페이지 흐름 -------------------------------------------------------------------
+
+class PCFlow:
+    """항목 단위로 이어 붙이는 페이지 커서. 새 페이지마다 하단 푸터(상품명 · 페이지 번호)를 깐다."""
+
+    def __init__(self, prs, footer_label=""):
+        self.prs = prs
+        self.footer_label = footer_label
+        self.slide = None
+        self.page_no = 0
+        self.top = Inches(0.45)
+        self.y = self.top
+        self.bottom_limit = SLIDE_H - Inches(0.62)
+        self.img_no = 0
+
+    def new_slide(self, footer=True):
+        self.slide = _blank_slide(self.prs)
+        self.page_no += 1
+        self.y = self.top
+        if footer:
+            self._footer()
+        return self.slide
+
+    new_page = new_slide
+
+    def _footer(self):
+        s = self.slide
+        y = SLIDE_H - Inches(0.42)
+        line = s.shapes.add_connector(1, PC_PAGE_MARGIN, y, SLIDE_W - PC_PAGE_MARGIN, y)
+        line.line.color.rgb = RGBColor(0xC9, 0xD3, 0xDE)
+        line.line.width = Pt(0.5)
+        if self.footer_label:
+            pc_text(s, PC_PAGE_MARGIN, y + Inches(0.07), Inches(4.5), self.footer_label, size=8,
+                    color=RGBColor(0x8A, 0x94, 0xA0), ls=1.0)
+        pc_text(s, SLIDE_W - PC_PAGE_MARGIN - Inches(1.0), y + Inches(0.07), Inches(1.0),
+                f"{self.page_no}", size=8, color=RGBColor(0x8A, 0x94, 0xA0), align=PP_ALIGN.RIGHT, ls=1.0)
+
+    def ensure(self, height, gap_before=Inches(0.28)):
+        """height만큼 이어 붙일 수 있으면 그 y를, 아니면 새 페이지의 y를 돌려준다.
+        페이지 맨 위에서는 gap을 주지 않는다."""
+        if self.slide is None:
+            self.new_slide()
+            return self.y
+        at_top = abs(self.y - self.top) < Inches(0.01)
+        cand = self.y if at_top else self.y + gap_before
+        if cand + height > self.bottom_limit and not at_top:
+            self.new_slide()
+            return self.y
+        self.y = cand
+        return self.y
+
+    def take_images(self, n):
+        nums = list(range(self.img_no + 1, self.img_no + n + 1))
+        self.img_no += n
+        return nums
+
+
+# ---- 공통 부품 ---------------------------------------------------------------------
+
+PC_H1_H = Inches(0.42)
+
+
+def pc_h1(flow, y, text, icon=None):
+    """섹션 제목: 모서리를 자른 네이비 바 + (선택) 흰색 아이콘. 높이 PC_H1_H."""
+    s = flow.slide
+    bar = _rect(s, MSO_SHAPE.SNIP_1_RECTANGLE, PC_PAGE_MARGIN, y, PC_CW, PC_H1_H, fill=PC_NAVY)
+    bar.adjustments[0] = 0.35
+    tx = PC_PAGE_MARGIN + Inches(0.18)
+    if icon:
+        add_icon(s, icon, tx, y + Inches(0.08), Inches(0.26), white=True)
+        tx += Inches(0.38)
+    pc_text(s, tx, y + Inches(0.07), PC_CW - (tx - PC_PAGE_MARGIN) - Inches(0.4), text, size=13.5,
+            color=WHITE, bold=True, ls=1.0, anchor=MSO_ANCHOR.MIDDLE)
+    return PC_H1_H
+
+
+def _tab_height(text):
+    size = 12
+    one_line_w = Emu(int(_word_w(text, True) * size * 12700 * 1.06)) + Inches(0.95)
+    w = min(PC_CW, max(Inches(2.6), one_line_w))
+    th = text_h(text, size, w - Inches(0.9), bold=True, ls=1.0, para_gap_pt=0)
+    return w, max(Inches(0.36), th + Inches(0.16))
+
+
+def pc_tab(flow, y, number_label, text):
+    s = flow.slide
+    w, h = _tab_height(text)
+    tab = _rect(s, MSO_SHAPE.SNIP_1_RECTANGLE, PC_PAGE_MARGIN, y, w, h, fill=PC_NAVY)
+    tab.adjustments[0] = 0.3
+    # 번호와 제목을 하나의 도형 텍스트로 넣으면 세로 중앙 정렬이 자동으로 맞는다
+    tf = tab.text_frame
+    tf.word_wrap = True
+    tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+    tf.margin_left, tf.margin_right = Inches(0.14), Inches(0.14)
+    tf.margin_top = tf.margin_bottom = Inches(0.02)
+    p = tf.paragraphs[0]
+    p.alignment = PP_ALIGN.LEFT
+    r1 = p.add_run()
+    r1.text = f"{number_label}   "
+    r1.font.size = Pt(12)
+    r1.font.bold = True
+    r1.font.color.rgb = RGBColor(0x9F, 0xC0, 0xE0)
+    r1.font.name = FONT_NAME
+    r2 = p.add_run()
+    r2.text = text
+    r2.font.size = Pt(12)
+    r2.font.bold = True
+    r2.font.color.rgb = WHITE
+    r2.font.name = FONT_NAME
+    return h
+
+
+def pc_group_bar_h(text):
+    return max(Inches(0.34), text_h(text, 11.5, PC_CW - Inches(0.4), bold=True, ls=1.0, para_gap_pt=0) + Inches(0.14))
+
+
+def pc_group_bar(flow, y, text):
+    """방문지 묶음(지역/일차) 바: 옅은 파란 배경 + 왼쪽 네이비 세로선."""
+    s = flow.slide
+    h = pc_group_bar_h(text)
+    _rect(s, MSO_SHAPE.RECTANGLE, PC_PAGE_MARGIN, y, PC_CW, h, fill=PC_PALE_BAR)
+    _rect(s, MSO_SHAPE.RECTANGLE, PC_PAGE_MARGIN, y, Inches(0.07), h, fill=PC_NAVY)
+    tb_h = text_h(text, 11.5, PC_CW - Inches(0.4), bold=True, ls=1.0, para_gap_pt=0)
+    pc_text(s, PC_PAGE_MARGIN + Inches(0.22), y + (h - tb_h) / 2, PC_CW - Inches(0.4), text, size=11.5,
+            color=PC_NAVY, bold=True, ls=1.0)
+    return h
+
+
+PC_IMG_H = Inches(0.82)
+
+
+def pc_image_row_h(n):
+    return PC_IMG_H
+
+
+def pc_image_row(flow, y, numbers, label_prefix="이미지", x=None, width=None):
+    """번호 붙은 이미지 자리 n칸을 (x, width) 영역 안에서 가운데 정렬로 한 줄에 놓는다(최대 3칸)."""
+    s = flow.slide
+    n = len(numbers)
+    x = PC_PAGE_MARGIN if x is None else x
+    width = width or PC_CW
+    gap = Inches(0.14)
+    w = min(Inches(2.15), int((width - gap * (n - 1)) / n))
+    total = w * n + gap * (n - 1)
+    x0 = x + int((width - total) / 2)
+    for i, no in enumerate(numbers):
+        x = x0 + (w + gap) * i
+        box = _rect(s, MSO_SHAPE.RECTANGLE, x, y, w, PC_IMG_H, fill=PC_PALE, line=PC_LINE_BLUE,
+                    line_w=1.0, dash=True)
+        add_icon(s, "image", x + int((w - Inches(0.28)) / 2), y + Inches(0.14), Inches(0.28))
+        pc_text(s, x, y + Inches(0.5), w, f"{label_prefix} {no}", size=10, color=PC_LINE_BLUE, bold=True,
+                align=PP_ALIGN.CENTER, ls=1.0)
+    return PC_IMG_H
+
+
+def _image_count(item, default=2):
+    try:
+        n = int(item.get("image_count", default))
+    except (TypeError, ValueError):
+        n = default
+    return max(1, min(3, n))
+
+
+def pc_chip_h(text, size=10, width=None, with_icon=True):
+    width = width or PC_CW
+    inner = width - Inches(0.28) - (Inches(0.3) if with_icon else 0)
+    return max(Inches(0.32), text_h(text, size, inner, bold=True, ls=1.0, para_gap_pt=0) + Inches(0.14))
+
+
+def pc_chip(flow, y, text, icon="footprints", size=10, x=None, width=None):
+    """옅은 파란 칩(코스 스펙 한 줄 등): [아이콘] 굵은 네이비 글씨."""
+    s = flow.slide
+    x = PC_PAGE_MARGIN if x is None else x
+    width = width or PC_CW
+    h = pc_chip_h(text, size, width, with_icon=bool(icon))
+    _rect(s, MSO_SHAPE.ROUNDED_RECTANGLE, x, y, width, h, fill=PC_PALE, line=RGBColor(0xC9, 0xD8, 0xE8)).adjustments[0] = 0.25
+    tx = x + Inches(0.14)
+    if icon:
+        add_icon(s, icon, tx, y + (h - Inches(0.2)) / 2, Inches(0.2))
+        tx += Inches(0.3)
+    tb_h = text_h(text, size, width - (tx - x) - Inches(0.14), bold=True, ls=1.0, para_gap_pt=0)
+    pc_text(s, tx, y + (h - tb_h) / 2, width - (tx - x) - Inches(0.14), text, size=size, color=PC_NAVY,
+            bold=True, ls=1.0)
+    return h
+
+
+def pc_body(flow, y, text, x=None, width=None, size=PC_BODY_SIZE, color=PC_BODY, align=PP_ALIGN.LEFT, bold=False):
+    x = PC_PAGE_MARGIN if x is None else x
+    width = width or PC_CW
+    return pc_text(flow.slide, x, y, width, text, size=size, color=color, align=align, bold=bold)
+
+
+def pc_body_h(text, width=None, size=PC_BODY_SIZE, bold=False):
+    return text_h(text, size, width or PC_CW, bold=bold)
+
+
+# ---- 섹션 ---------------------------------------------------------------------------
+
+def _option_lines(cover, options_key, single_key):
+    text = cover_option_text(cover, options_key, single_key)
+    return [ln for ln in str(text or "").split("\n") if ln.strip()]
+
+
+def _has_options(cover, key):
+    opts = cover.get(key)
+    return isinstance(opts, list) and len([o for o in opts if str(o).strip()]) >= 2
+
+
+def _option_items(cover, options_key, types_key):
+    """후보안 [(라벨, 문구), ...]. 라벨 = "안1 · 감성형 · 추천"(첫 번째 안이 추천안).
+    types 배열이 없거나 짧으면 해당 안은 "안N"만 표시(하위 호환)."""
+    opts = [str(o).strip() for o in (cover.get(options_key) or []) if str(o).strip()]
+    types = cover.get(types_key) or []
+    items = []
+    for i, text in enumerate(opts):
+        text = re.sub(r"^\s*안\s*\d+\s*[\)\.]\s*", "", text)  # AI가 "안1)"을 직접 붙인 경우 제거(중복 방지)
+        label = f"안{i + 1}"
+        t = str(types[i]).strip() if i < len(types) and types[i] else ""
+        if t:
+            label += f" · {t}"
+        if i == 0:
+            label += " · 추천"
+        items.append((label, text))
+    return items
+
+
+_PILL_W = Inches(1.55)
+
+
+def _candidate_card_h(items, size, caption=True, bold=False):
+    inner_w = PC_CW - Inches(0.2) - Inches(0.3) - _PILL_W - Inches(0.14)
+    h = Inches(0.12) + (Inches(0.22) if caption else 0)
+    for _, text in items:
+        h += max(Inches(0.26), text_h(text, size, inner_w, bold=bold, ls=1.0, para_gap_pt=0)) + Inches(0.09)
+    return h + Inches(0.04)
+
+
+def _candidate_card(flow, y, caption, items, size, bold=False):
+    """후보안 카드: 한 줄에 [라벨 알약] + 문구. 첫 번째(추천안)는 네이비로 채워 구분한다."""
+    s = flow.slide
+    h = _candidate_card_h(items, size, caption=bool(caption), bold=bold)
+    cx = PC_PAGE_MARGIN + Inches(0.1)
+    _rect(s, MSO_SHAPE.ROUNDED_RECTANGLE, cx, y, PC_CW - Inches(0.2), h,
+          fill=PC_PALE, line=RGBColor(0xC9, 0xD8, 0xE8)).adjustments[0] = 0.1
+    cy = y + Inches(0.1)
+    if caption:
+        pc_text(s, PC_PAGE_MARGIN, cy, PC_CW, caption, size=8, color=PC_LINE_BLUE, bold=True,
+                align=PP_ALIGN.CENTER, ls=1.0)
+        cy += Inches(0.22)
+    text_x = cx + Inches(0.15) + _PILL_W + Inches(0.14)
+    text_w = PC_CW - Inches(0.2) - Inches(0.3) - _PILL_W - Inches(0.14)
+    for i, (label, text) in enumerate(items):
+        th = text_h(text, size, text_w, bold=bold, ls=1.0, para_gap_pt=0)
+        row_h = max(Inches(0.26), th)
+        pill_h = Inches(0.24)
+        pill = _rect(s, MSO_SHAPE.ROUNDED_RECTANGLE, cx + Inches(0.15), cy + (row_h - pill_h) / 2, _PILL_W, pill_h,
+                     fill=PC_NAVY if i == 0 else WHITE, line=PC_NAVY, line_w=0.75)
+        pill.adjustments[0] = 0.5
+        _shape_text(pill, label, 8.5, WHITE if i == 0 else PC_NAVY, bold=True, margins=(0.04, 0, 0.04, 0))
+        pc_text(s, text_x, cy + (row_h - th) / 2, text_w, text, size=size, color=PC_BODY, bold=bold, ls=1.0,
+                para_gap_pt=0)
+        cy += row_h + Inches(0.09)
+    return h
+
+
+def balance_lines(text, size_pt, width_emu, bold=False):
+    """한 줄에 안 들어가는 짧은 제목은 공백 기준으로 가운데에서 두 줄로 나눠 한 글자만 남는 줄을 막는다."""
+    text = str(text or "")
+    if "\n" in text or count_lines(text, size_pt, width_emu, bold) != 2 or " " not in text:
+        return text
+    mid = len(text) / 2
+    cands = [i for i, c in enumerate(text) if c == " "]
+    cut = min(cands, key=lambda i: abs(i - mid))
+    return text[:cut] + "\n" + text[cut + 1:]
+
+
+def build_pc_cover(flow, cover, watermark_label=""):
+    slide = flow.new_slide()
+    y = flow.y
+    # 표지가 한 장을 넘지 않도록 메인 이미지 자리 높이를 남는 공간에 맞춰 줄인다(최대 2.0in, 최소 1.1in)
+    _tl = _option_lines(cover, "tagline_options", "tagline")
+    _sl = _option_lines(cover, "subtitle_options", "subtitle")
+    _pn = balance_lines(cover.get("product_name", ""), 27, PC_CW, bold=True)
+    fixed = Inches(0.1) + Inches(0.26)
+    if _tl:
+        fixed += (_candidate_card_h(_option_items(cover, "tagline_options", "tagline_option_types"), 12) + Inches(0.22)
+                  if _has_options(cover, "tagline_options")
+                  else text_h("\n".join(_tl), 13, PC_CW) + Inches(0.12))
+    if _pn:
+        fixed += text_h(_pn, 27, PC_CW, bold=True, ls=1.0, para_gap_pt=0) + Inches(0.3)
+    if cover.get("region_tag"):
+        fixed += Inches(0.52)
+    if _sl:
+        fixed += (_candidate_card_h(_option_items(cover, "subtitle_options", "subtitle_option_types"), 12.5, bold=True)
+                  + Inches(0.2) if _has_options(cover, "subtitle_options")
+                  else text_h("\n".join(_sl), 15, PC_CW, bold=True) + Inches(0.14))
+    if cover.get("intro_copy"):
+        fixed += text_h(cover["intro_copy"], 11, PC_CW - Inches(0.6)) + Inches(0.05)
+    img_h = int(max(Inches(1.1), min(Inches(2.0), flow.bottom_limit - flow.top - fixed)))
+    if watermark_label:
+        pc_text(slide, SLIDE_W - PC_PAGE_MARGIN - Inches(1.6), Inches(0.18), Inches(1.6), watermark_label,
+                size=10, bold=True, color=RGBColor(0xB8, 0x9B, 0x00), align=PP_ALIGN.RIGHT, ls=1.0)
+    y += Inches(0.1)
+
+    tag_lines = _option_lines(cover, "tagline_options", "tagline")
+    multi_tag = _has_options(cover, "tagline_options")
+    if tag_lines:
+        if multi_tag:
+            y += _candidate_card(flow, y, "태그라인 후보 (유형별 3안 · 안1이 추천안)",
+                                 _option_items(cover, "tagline_options", "tagline_option_types"), 12) + Inches(0.22)
+        else:
+            y += pc_text(slide, PC_PAGE_MARGIN, y, PC_CW, "\n".join(tag_lines), size=13, color=PC_SUB,
+                         align=PP_ALIGN.CENTER) + Inches(0.12)
+
+    product_name = balance_lines(cover.get("product_name", ""), 27, PC_CW, bold=True)
+    if product_name:
+        y += pc_text(slide, PC_PAGE_MARGIN, y, PC_CW, product_name, size=27, bold=True, color=PC_NAVY,
+                     align=PP_ALIGN.CENTER, ls=1.0, para_gap_pt=0) + Inches(0.1)
+        _rect(slide, MSO_SHAPE.RECTANGLE, int((SLIDE_W - Inches(0.9)) / 2), y, Inches(0.9), Pt(3), fill=PC_LINE_BLUE)
+        y += Inches(0.2)
+
+    if cover.get("region_tag"):
+        tag = cover["region_tag"]
+        pw = min(PC_CW, Emu(int(_word_w(tag, True) * 11 * 12700)) + Inches(0.6))
+        pill = _rect(slide, MSO_SHAPE.ROUNDED_RECTANGLE, int((SLIDE_W - pw) / 2), y, pw, Inches(0.32),
+                     fill=None, line=PC_NAVY, line_w=1.0)
+        pill.adjustments[0] = 0.5
+        _shape_text(pill, tag, 11, PC_NAVY, bold=True)
+        y += Inches(0.32) + Inches(0.2)
+
+    # 메인 이미지 자리 (번호 체계 밖 — 표지 대표 이미지)
+    box = _rect(slide, MSO_SHAPE.RECTANGLE, PC_PAGE_MARGIN, y, PC_CW, img_h, fill=PC_PALE,
+                line=PC_LINE_BLUE, line_w=1.0, dash=True)
+    add_icon(slide, "image", PC_PAGE_MARGIN + int((PC_CW - Inches(0.4)) / 2), y + int(img_h / 2) - Inches(0.38), Inches(0.4))
+    pc_text(slide, PC_PAGE_MARGIN, y + int(img_h / 2) + Inches(0.1), PC_CW, "메인 이미지", size=11, bold=True,
+            color=PC_LINE_BLUE, align=PP_ALIGN.CENTER, ls=1.0)
+    y += img_h + Inches(0.26)
+
+    sub_lines = _option_lines(cover, "subtitle_options", "subtitle")
+    if sub_lines:
+        if _has_options(cover, "subtitle_options"):
+            y += _candidate_card(flow, y, "서브카피 후보 (유형별 3안 · 안1이 추천안)",
+                                 _option_items(cover, "subtitle_options", "subtitle_option_types"), 12.5, bold=True) + Inches(0.2)
+        else:
+            y += pc_text(slide, PC_PAGE_MARGIN, y, PC_CW, "\n".join(sub_lines), size=15, bold=True, color=PC_NAVY,
+                         align=PP_ALIGN.CENTER) + Inches(0.14)
+    if cover.get("intro_copy"):
+        y += pc_text(slide, PC_PAGE_MARGIN + Inches(0.3), y, PC_CW - Inches(0.6), cover["intro_copy"],
+                     size=11, color=PC_SUB, align=PP_ALIGN.CENTER) + Inches(0.05)
+    flow.y = y
+    return slide
+
+
+def build_pc_background(flow, background_story):
+    if not background_story:
+        return None
+    title = background_story.get("title", "")
+    content = background_story.get("content", "")
+    if not (title or content):
+        return None
+    tw = PC_CW - Inches(0.4)
+    title_h = text_h(title, 16, tw, bold=True, ls=1.0, para_gap_pt=0) if title else Emu(0)
+    content_h = text_h(content, PC_BODY_SIZE, PC_CW)
+    total = (title_h + Inches(0.3) if title else Emu(0)) + content_h
+    y = flow.ensure(total, gap_before=Inches(0.3))
+    s = flow.slide
+    if title:
+        pc_text(s, PC_PAGE_MARGIN + Inches(0.2), y, tw, title, size=16, bold=True, color=PC_NAVY,
+                align=PP_ALIGN.CENTER, ls=1.0, para_gap_pt=0)
+        y += title_h + Inches(0.1)
+        _rect(s, MSO_SHAPE.RECTANGLE, int((SLIDE_W - Inches(0.6)) / 2), y, Inches(0.6), Pt(2.5), fill=PC_LINE_BLUE)
+        y += Inches(0.2)
+    pc_body(flow, y, content)
+    flow.y = y + content_h
+    return s
+
+
+def build_pc_reasons(flow, why_reasons, product_name=""):
+    """'{상품명} 포인트 0N' — H1 + 번호 탭 항목(이미지 자리 + 본문)."""
+    if not why_reasons:
+        return None
+    heading = f"{product_name} 포인트 {len(why_reasons):02d}".strip()
+    metrics = []
+    for i, r in enumerate(why_reasons):
+        n_img = _image_count(r)
+        tab_h = _tab_height(r.get("title", ""))[1]
+        body_h = pc_body_h(r.get("content", ""))
+        metrics.append((n_img, tab_h, body_h, tab_h + Inches(0.12) + PC_IMG_H + Inches(0.12) + body_h))
+
+    first = True
+    for i, (r, (n_img, tab_h, body_h, blk_h)) in enumerate(zip(why_reasons, metrics)):
+        need = blk_h + (PC_H1_H + Inches(0.2) if first else Inches(0))
+        y = flow.ensure(need)
+        slide = flow.slide
+        if first:
+            pc_h1(flow, y, heading, icon="sparkles")
+            y += PC_H1_H + Inches(0.2)
+            first = False
+        pc_tab(flow, y, f"{i + 1:02d}", r.get("title", ""))
+        y += tab_h + Inches(0.12)
+        pc_image_row(flow, y, flow.take_images(n_img))
+        y += PC_IMG_H + Inches(0.12)
+        pc_body(flow, y, r.get("content", ""))
+        flow.y = y + body_h
+    return flow.slide
+
+
+def _is_day_tag(tag):
+    return bool(re.match(r"^\s*\d+\s*일\s*차", tag or ""))
+
+
+def build_pc_destinations(flow, destinations, section_title=None, icon="route", default_title="코스 하이라이트"):
+    """코스/방문지 목록.
+    - region_tag가 짧은 "N일차"면: 제목 앞에 일차 배지(네이비 알약) — 사람 기획안의 일차 배지와 같은 역할
+    - 그 외 region_tag(지역/테마): 그룹 바(옅은 파랑 + 네이비 세로선) 아래에 번호 원 + 제목
+    - 이어서 스펙 칩(stats) > 번호 붙은 이미지 자리 > 본문."""
+    if not destinations:
+        return None
+    heading = section_title or default_title
+    current_group = None
+    drew_heading = False
+    circle = Inches(0.36)
+
+    for idx, dest in enumerate(destinations):
+        title = dest.get("title", "")
+        group = dest.get("region_tag") or None
+        day_badge = group if (group and _is_day_tag(group) and len(group) <= 8) else None
+        bar_group = None if day_badge else group
+        new_group = bool(bar_group) and bar_group != current_group
+        badge_w = Emu(int(_word_w(day_badge, True) * 10.5 * 12700)) + Inches(0.36) if day_badge else circle
+        badge_w = max(badge_w, Inches(0.62)) if day_badge else circle
+        off = badge_w + Inches(0.14)
+        tw = PC_CW - off
+        title_h = max(circle, text_h(title, 13, tw, bold=True, ls=1.0, para_gap_pt=0))
+        stats = (dest.get("stats") or "").strip()
+        stats_h = pc_chip_h(stats, 10, PC_CW - off) if stats else Emu(0)
+        n_img = _image_count(dest)
+        desc = dest.get("description", "")
+        desc_h = pc_body_h(desc, PC_CW - off)
+        group_h = (pc_group_bar_h(bar_group) + Inches(0.14)) if new_group else Emu(0)
+        block_h = title_h + Inches(0.1) + (stats_h + Inches(0.1) if stats else 0) + PC_IMG_H + Inches(0.1) + desc_h
+        need = group_h + block_h + (PC_H1_H + Inches(0.18) if not drew_heading else 0)
+
+        y = flow.ensure(need, gap_before=Inches(0.26))
+        slide = flow.slide
+        if not drew_heading:
+            pc_h1(flow, y, heading, icon=icon)
+            y += PC_H1_H + Inches(0.18)
+            drew_heading = True
+        # 그룹이 페이지를 넘어 이어질 때(새 그룹이 아닌데 페이지 맨 위) 그룹 바를 다시 보여준다
+        if not new_group and bar_group and abs(y - flow.top) < Inches(0.01):
+            y += pc_group_bar(flow, y, bar_group) + Inches(0.14)
+        if new_group:
+            y += pc_group_bar(flow, y, bar_group) + Inches(0.14)
+            current_group = bar_group
+        elif not bar_group:
+            current_group = None
+
+        by = y + (title_h - circle) / 2
+        if day_badge:
+            pill = _rect(slide, MSO_SHAPE.ROUNDED_RECTANGLE, PC_PAGE_MARGIN, by, badge_w, circle, fill=PC_NAVY)
+            pill.adjustments[0] = 0.5
+            _shape_text(pill, day_badge, 10.5, WHITE, bold=True, margins=(0, 0, 0, 0))
+        else:
+            oval = _rect(slide, MSO_SHAPE.OVAL, PC_PAGE_MARGIN, by, circle, circle, fill=PC_NAVY)
+            _shape_text(oval, f"{idx + 1}", 12, WHITE, bold=True, margins=(0, 0, 0, 0))
+        t_h = text_h(title, 13, tw, bold=True, ls=1.0, para_gap_pt=0)
+        pc_text(slide, PC_PAGE_MARGIN + off, y + (title_h - t_h) / 2, tw, title, size=13, bold=True,
+                color=PC_BODY, ls=1.0, para_gap_pt=0)
+        y += title_h + Inches(0.1)
+        if stats:
+            pc_chip(flow, y, stats, icon="footprints", x=PC_PAGE_MARGIN + off, width=PC_CW - off)
+            y += stats_h + Inches(0.1)
+        pc_image_row(flow, y, flow.take_images(n_img), x=PC_PAGE_MARGIN + off, width=PC_CW - off)
+        y += PC_IMG_H + Inches(0.1)
+        pc_body(flow, y, desc, x=PC_PAGE_MARGIN + off, width=PC_CW - off)
+        flow.y = y + desc_h
+    return flow.slide
+
+
+def build_pc_route_compare(flow, route_compare):
+    if not route_compare or not route_compare.get("routes"):
+        return None
+    routes = route_compare["routes"]
+    crit = [("course", "코스"), ("scenery", "풍경"), ("appeal", "매력"), ("summary", "한줄 요약")]
+    label_w = Inches(0.9)
+    col_w = int((PC_CW - label_w) / len(routes))
+    cell_w = col_w - Inches(0.16)
+    row_hs = []
+    for key, _ in crit:
+        row_hs.append(max(text_h(str(r.get(key, "")), 10, cell_w, ls=1.0, para_gap_pt=0) for r in routes) + Inches(0.16))
+    head_h = Inches(0.36)
+    total = PC_H1_H + Inches(0.18) + head_h + sum(row_hs)
+    y = flow.ensure(total)
+    s = flow.slide
+    pc_h1(flow, y, route_compare.get("title") or "노선 비교", icon="route")
+    y += PC_H1_H + Inches(0.18)
+    for ri, route in enumerate(routes):
+        x = PC_PAGE_MARGIN + label_w + col_w * ri
+        c = _rect(s, MSO_SHAPE.RECTANGLE, x, y, col_w, head_h, fill=PC_NAVY, line=WHITE)
+        _shape_text(c, route.get("name", ""), 11, WHITE, bold=True)
+    y += head_h
+    for (key, label), rh in zip(crit, row_hs):
+        c = _rect(s, MSO_SHAPE.RECTANGLE, PC_PAGE_MARGIN, y, label_w, rh, fill=PC_PALE_BAR, line=WHITE)
+        _shape_text(c, label, 10, PC_NAVY, bold=True)
+        for ri, route in enumerate(routes):
+            x = PC_PAGE_MARGIN + label_w + col_w * ri
+            c = _rect(s, MSO_SHAPE.RECTANGLE, x, y, col_w, rh, fill=PC_PALE if key != "summary" else WHITE,
+                      line=RGBColor(0xD5, 0xDF, 0xEA))
+            _shape_text(c, str(route.get(key, "")), 10, PC_BODY, align=PP_ALIGN.LEFT,
+                        margins=(0.08, 0.05, 0.08, 0.05))
+        y += rh
+    flow.y = y
+    return s
+
+
+def build_pc_transport(flow, transport_spec):
+    if not transport_spec or not transport_spec.get("specs"):
+        return None
+    label_w = Inches(1.5)
+    rows = []
+    total = PC_H1_H + Inches(0.18) + PC_IMG_H + Inches(0.14)
+    for spec in transport_spec["specs"]:
+        v = str(spec.get("value", ""))
+        rh = max(Inches(0.34), text_h(v, 10.5, PC_CW - label_w - Inches(0.2), ls=1.0, para_gap_pt=0) + Inches(0.14))
+        rows.append((spec.get("label", ""), v, rh))
+        total += rh
+    y = flow.ensure(total)
+    s = flow.slide
+    pc_h1(flow, y, transport_spec.get("title") or "이동수단 안내", icon="train-front")
+    y += PC_H1_H + Inches(0.18)
+    pc_image_row(flow, y, flow.take_images(1), label_prefix="이동수단 이미지")
+    y += PC_IMG_H + Inches(0.14)
+    for label, v, rh in rows:
+        c = _rect(s, MSO_SHAPE.RECTANGLE, PC_PAGE_MARGIN, y, label_w, rh, fill=PC_PALE_BAR, line=WHITE)
+        _shape_text(c, label, 10.5, PC_NAVY, bold=True)
+        c2 = _rect(s, MSO_SHAPE.RECTANGLE, PC_PAGE_MARGIN + label_w, y, PC_CW - label_w, rh, fill=None,
+                   line=RGBColor(0xD5, 0xDF, 0xEA))
+        _shape_text(c2, v, 10.5, PC_BODY, align=PP_ALIGN.LEFT, margins=(0.1, 0.04, 0.1, 0.04))
+        y += rh
+    flow.y = y
+    return s
+
+
+def build_pc_guide(flow, guide_profile):
+    if not guide_profile:
+        return None
+    first = True
+    pic = Inches(1.05)
+    for guide in guide_profile:
+        name_title = guide.get("name", "")
+        if guide.get("title"):
+            name_title = f"{name_title}  ({guide['title']})" if name_title else guide["title"]
+        bio = guide.get("bio", "")
+        tx_w = PC_CW - pic - Inches(0.2)
+        name_h = text_h(name_title, 12.5, tx_w, bold=True, ls=1.0, para_gap_pt=0)
+        bio_h = pc_body_h(bio, tx_w, size=10.5)
+        block_h = max(pic, name_h + Inches(0.08) + bio_h)
+        need = block_h + (PC_H1_H + Inches(0.18) if first else 0)
+        y = flow.ensure(need)
+        s = flow.slide
+        if first:
+            pc_h1(flow, y, "함께하는 사람들", icon="users")
+            y += PC_H1_H + Inches(0.18)
+            first = False
+        box = _rect(s, MSO_SHAPE.RECTANGLE, PC_PAGE_MARGIN, y, pic, pic, fill=PC_PALE, line=PC_LINE_BLUE, line_w=1.0, dash=True)
+        _shape_text(box, "프로필 사진", 9, PC_LINE_BLUE, bold=True)
+        pc_text(s, PC_PAGE_MARGIN + pic + Inches(0.2), y, tx_w, name_title, size=12.5, bold=True, color=PC_NAVY, ls=1.0, para_gap_pt=0)
+        pc_body(flow, y + name_h + Inches(0.08), bio, x=PC_PAGE_MARGIN + pic + Inches(0.2), width=tx_w, size=10.5)
+        flow.y = y + block_h
+    return flow.slide
+
+
+def build_pc_experience(flow, brand_tagline, experience_points):
+    """브랜드 한 줄 + 경험 포인트 아이콘 카드(최대 4열)."""
+    if not brand_tagline and not experience_points:
+        return None
+    pts = []
+    for p in (experience_points or []):
+        p = dict(p)
+        # "혜초와 함께하면, ○○" 같은 앞머리는 카드 제목을 흐리게 하므로(섹션 제목이 이미 그 뜻) 떼고 이점만 남긴다
+        cleaned = re.sub(r"^\s*혜초와\s*함께\s*(하면|라면|하는|한다면)\s*[,，:]?\s*", "", str(p.get("title", "")))
+        if cleaned.strip():
+            p["title"] = cleaned.strip()
+        pts.append(p)
+    n = len(pts)
+    tag_h = text_h(brand_tagline, 14, PC_CW - Inches(0.6), bold=True, ls=1.0, para_gap_pt=0) if brand_tagline else Emu(0)
+    gap = Inches(0.12)
+    cols = min(max(n, 1), 4)
+    card_w = int((PC_CW - gap * (cols - 1)) / cols)
+    inner_w = card_w - Inches(0.24)
+    rows_n = -(-n // cols) if n else 0
+    title_hs = [text_h(p.get("title", ""), 11.5, inner_w, bold=True, ls=1.0, para_gap_pt=0) for p in pts]
+    desc_hs = [text_h(p.get("description", ""), 10, inner_w, ls=1.0, para_gap_pt=0) for p in pts]
+    row_card_hs = []
+    for r in range(rows_n):
+        sl = slice(r * cols, (r + 1) * cols)
+        row_card_hs.append(Inches(0.2) + Inches(0.52) + Inches(0.12) + max(title_hs[sl]) + Inches(0.08) + max(desc_hs[sl]) + Inches(0.2))
+    total = (PC_H1_H + Inches(0.2) if True else 0) + (tag_h + Inches(0.2) if brand_tagline else 0) \
+        + sum(row_card_hs) + gap * max(rows_n - 1, 0)
+    y = flow.ensure(total)
+    s = flow.slide
+    pc_h1(flow, y, "혜초와 함께라면 더 특별한 이유", icon="badge-check")
+    y += PC_H1_H + Inches(0.2)
+    if brand_tagline:
+        pc_text(s, PC_PAGE_MARGIN + Inches(0.3), y, PC_CW - Inches(0.6), brand_tagline, size=14, bold=True,
+                color=PC_NAVY, align=PP_ALIGN.CENTER, ls=1.0, para_gap_pt=0)
+        y += tag_h + Inches(0.2)
+    for r in range(rows_n):
+        ch = row_card_hs[r]
+        for c in range(cols):
+            i = r * cols + c
+            if i >= n:
+                break
+            p = pts[i]
+            x = PC_PAGE_MARGIN + (card_w + gap) * c
+            _rect(s, MSO_SHAPE.ROUNDED_RECTANGLE, x, y, card_w, ch, fill=PC_PALE,
+                  line=RGBColor(0xC9, 0xD8, 0xE8)).adjustments[0] = 0.07
+            cx = x + int((card_w - Inches(0.52)) / 2)
+            _rect(s, MSO_SHAPE.OVAL, cx, y + Inches(0.2), Inches(0.52), Inches(0.52), fill=WHITE, line=PC_LINE_BLUE)
+            key = pick_icon(p.get("title", ""), p.get("description", ""), p.get("icon"))
+            add_icon(s, key, cx + Inches(0.1), y + Inches(0.3), Inches(0.32))
+            ty = y + Inches(0.2) + Inches(0.52) + Inches(0.12)
+            pc_text(s, x + Inches(0.12), ty, inner_w, p.get("title", ""), size=11.5, bold=True, color=PC_NAVY,
+                    align=PP_ALIGN.CENTER, ls=1.0, para_gap_pt=0)
+            pc_text(s, x + Inches(0.12), ty + max(title_hs[r * cols:(r + 1) * cols]) + Inches(0.08), inner_w,
+                    p.get("description", ""), size=10, color=PC_SUB, align=PP_ALIGN.CENTER, ls=1.0, para_gap_pt=0)
+        y += ch + gap
+    flow.y = y - gap
+    return s
+
+
+def _pc_table(slide, x, y, widths, rows, row_h, header=True, size=9):
+    """rows[0]이 머리글. 머리글 네이비, 첫 열 옅은 파랑, 나머지 흰/옅은 줄무늬."""
+    n_rows, n_cols = len(rows), len(rows[0])
+    shape = slide.shapes.add_table(n_rows, n_cols, x, y, sum(widths), row_h * n_rows)
+    tbl = shape.table
+    for ci, w in enumerate(widths):
+        tbl.columns[ci].width = w
+    for ri in range(n_rows):
+        tbl.rows[ri].height = row_h
+        for ci in range(n_cols):
+            cell = tbl.cell(ri, ci)
+            cell.text = str(rows[ri][ci])
+            cell.margin_top = cell.margin_bottom = Inches(0.02)
+            cell.margin_left = cell.margin_right = Inches(0.03)
+            cell.vertical_anchor = MSO_ANCHOR.MIDDLE
+            cell.fill.solid()
+            if ri == 0 and header:
+                cell.fill.fore_color.rgb = PC_NAVY
+                fc = WHITE
+            elif ci == 0:
+                cell.fill.fore_color.rgb = PC_PALE_BAR
+                fc = PC_NAVY
+            else:
+                cell.fill.fore_color.rgb = WHITE if ri % 2 else PC_PALE
+                fc = PC_BODY
+            for para in cell.text_frame.paragraphs:
+                para.alignment = PP_ALIGN.CENTER
+                for run in para.runs:
+                    run.font.size = Pt(size)
+                    run.font.name = FONT_NAME
+                    run.font.bold = (ri == 0 or ci == 0)
+                    run.font.color.rgb = fc
+    return shape
+
+
+def build_pc_season(flow, season, season_table=None):
+    if not season or (not season.get("content") and not season_table):
+        return None
+    stat = season.get("stat_line")
+    content = season.get("content", "")
+    stat_h = pc_chip_h(stat, 11, PC_CW, with_icon=True) if stat else Emu(0)
+    content_h = pc_body_h(content)
+    has_rain = bool(season_table) and any((r.get("rain") or "").strip() for r in season_table)
+    n_rows = (3 if has_rain else 2) + 1
+    row_h = Inches(0.27)
+    chart_h = Inches(0.55)
+    table_h = chart_h + Inches(0.12) + row_h * n_rows if season_table else Emu(0)
+    total = PC_H1_H + Inches(0.18) + (stat_h + Inches(0.12) if stat else 0) + content_h \
+        + (Inches(0.2) + table_h if season_table else 0)
+    y = flow.ensure(total)
+    s = flow.slide
+    pc_h1(flow, y, season.get("title", "언제 가면 좋을까?"), icon="sun")
+    y += PC_H1_H + Inches(0.18)
+    if stat:
+        pc_chip(flow, y, stat, icon="calendar-days", size=11)
+        y += stat_h + Inches(0.12)
+    if content:
+        pc_body(flow, y, content)
+        y += content_h
+    if season_table:
+        y += Inches(0.2)
+        box = _rect(s, MSO_SHAPE.RECTANGLE, PC_PAGE_MARGIN, y, PC_CW, chart_h, fill=PC_PALE, line=PC_LINE_BLUE,
+                    line_w=1.0, dash=True)
+        _shape_text(box, "월별 기온 차트 (자리표시 — 실제 그래픽은 디자이너 작업)", 9.5, PC_LINE_BLUE, bold=True)
+        y += chart_h + Inches(0.12)
+        label_w = Inches(1.0)
+        n_m = len(season_table)
+        col_w = int((PC_CW - label_w) / n_m)
+        widths = [label_w] + [col_w] * n_m
+        labels = ["구분", "최저기온 (°C)", "최고기온 (°C)"] + (["강수량 (mm)"] if has_rain else [])
+        keys = ["month", "low", "high"] + (["rain"] if has_rain else [])
+        rows = [[labels[i]] + [str(m.get(k, "")) for m in season_table] for i, k in enumerate(keys)]
+        _pc_table(s, PC_PAGE_MARGIN, y, widths, rows, row_h, size=9)
+        y += row_h * n_rows
+    flow.y = y
+    return s
+
+
+def build_pc_qna(flow, qna_items, heading="궁금증을 풀어드려요"):
+    """qna_items = [(icon_key, qa_dict), ...] — 식사/난이도·안전 안내를 아이콘 카드 목록으로."""
+    items = [(ic, qa) for ic, qa in qna_items if qa and qa.get("question")]
+    if not items:
+        return None
+    ic_col = Inches(0.62)
+    tw = PC_CW - ic_col - Inches(0.1)
+    first = True
+    for ic, qa in items:
+        q_h = text_h(qa["question"], 12.5, tw - Inches(0.3), bold=True, ls=1.0, para_gap_pt=0)
+        a_h = pc_body_h(qa.get("answer", ""), tw - Inches(0.3))
+        card_h = Inches(0.16) + q_h + Inches(0.08) + a_h + Inches(0.18)
+        need = card_h + (PC_H1_H + Inches(0.18) if first else 0)
+        y = flow.ensure(need)
+        s = flow.slide
+        if first:
+            pc_h1(flow, y, heading, icon="circle-help")
+            y += PC_H1_H + Inches(0.18)
+            first = False
+        _rect(s, MSO_SHAPE.ROUNDED_RECTANGLE, PC_PAGE_MARGIN, y, PC_CW, card_h, fill=PC_PALE,
+              line=RGBColor(0xC9, 0xD8, 0xE8)).adjustments[0] = 0.06
+        _rect(s, MSO_SHAPE.OVAL, PC_PAGE_MARGIN + Inches(0.12), y + Inches(0.14), Inches(0.46), Inches(0.46), fill=WHITE, line=PC_LINE_BLUE)
+        add_icon(s, ic, PC_PAGE_MARGIN + Inches(0.2), y + Inches(0.22), Inches(0.3))
+        tx = PC_PAGE_MARGIN + ic_col + Inches(0.15)
+        pc_text(s, tx, y + Inches(0.14), tw - Inches(0.3), qa["question"], size=12.5, bold=True, color=PC_NAVY,
+                ls=1.0, para_gap_pt=0)
+        pc_body(flow, y + Inches(0.14) + q_h + Inches(0.08), qa.get("answer", ""), x=tx, width=tw - Inches(0.3))
+        flow.y = y + card_h
+    return flow.slide
+
+
+def build_pc_review_notes(flow, review):
+    """Gemini 교차검수 결과(내부 참고용) — 새 스타일의 제목/본문으로."""
+    if not review or review.get("_dry_run"):
+        return []
+    issues = review.get("issues") or []
+    slide = flow.new_slide()
+    y = flow.y
+    pc_h1(flow, y, "Gemini 교차검수 결과 (내부 참고용)", icon="shield-check")
+    y += PC_H1_H + Inches(0.2)
+    slides = [slide]
+    if not issues:
+        flow.y = y + pc_body(flow, y, "검수 통과 — 왜곡·날조 / 저작권·표절 / 사실확인 / 비문·맞춤법 이슈가 발견되지 않았습니다.",
+                              color=PC_SUB)
+        return slides
+    if review.get("summary"):
+        y += pc_body(flow, y, review["summary"], color=PC_SUB, size=10.5) + Inches(0.18)
+    for issue in issues:
+        head = f"[{issue.get('category', '')} · {issue.get('severity', '')}] {issue.get('field', '')}"
+        head_h = text_h(head, 11, PC_CW, bold=True, ls=1.0, para_gap_pt=0)
+        quote = issue.get("quote", "")
+        quote_h = text_h(quote, 10, PC_CW - Inches(0.3)) if quote else Emu(0)
+        exp_h = pc_body_h(issue.get("explanation", ""), size=10.5)
+        block_h = head_h + Inches(0.05) + (quote_h + Inches(0.05) if quote else 0) + exp_h + Inches(0.2)
+        if y + block_h > flow.bottom_limit:
+            slide = flow.new_slide()
+            slides.append(slide)
+            y = flow.y
+        pc_text(flow.slide, PC_PAGE_MARGIN, y, PC_CW, head, size=11, bold=True, color=PC_NAVY, ls=1.0, para_gap_pt=0)
+        y += head_h + Inches(0.05)
+        if quote:
+            pc_text(flow.slide, PC_PAGE_MARGIN + Inches(0.15), y, PC_CW - Inches(0.3), f"“{quote}”", size=10, color=PC_SUB)
+            y += quote_h + Inches(0.05)
+        pc_body(flow, y, issue.get("explanation", ""), size=10.5)
+        y += exp_h + Inches(0.2)
+    flow.y = y
+    return slides
+
+
+def build_legacy(content_json, out_path, review=None):
     """content_json(정현지 스키마) -> 새 PPTX 파일 생성.
     review(reviewer.review_content()의 반환값)를 넘기면 마지막에 검수 결과 페이지를
     덧붙인다 — 넘기지 않으면(기본값 None) 예전과 동일하게 검수 페이지 없이 생성된다."""
@@ -1313,6 +2347,38 @@ def build(content_json, out_path, review=None):
     build_review_notes_slide(flow, review)
     prs.save(out_path)
     return prs
+
+
+def build(content_json, out_path, review=None):
+    """PC 상품소개 기획안 생성(정돈형 레이아웃, 2026-11). 예전 방식은 build_legacy()에 남겨둠.
+    content_json 스키마는 그대로 — icon/image_count는 선택 필드(없으면 자동 추정/기본 2장)."""
+    prs = Presentation()
+    prs.slide_width = SLIDE_W
+    prs.slide_height = SLIDE_H
+    cover = content_json.get("cover", {})
+    flow = PCFlow(prs, footer_label=" ".join(str(cover.get("product_name", "")).split()))
+
+    build_pc_cover(flow, cover, content_json.get("watermark_label", ""))
+    build_pc_background(flow, content_json.get("background_story"))
+    build_pc_reasons(flow, content_json.get("why_reasons"), product_name=cover.get("product_name", ""))
+    build_pc_destinations(flow, content_json.get("destinations", []),
+                          section_title=content_json.get("destinations_heading"),
+                          icon="route", default_title="코스 하이라이트")
+    build_pc_destinations(flow, content_json.get("tour_spots", []),
+                          section_title=content_json.get("tour_spots_heading"),
+                          icon="landmark", default_title="함께 즐기는 관광 코스")
+    build_pc_route_compare(flow, content_json.get("route_compare"))
+    build_pc_transport(flow, content_json.get("transport_spec"))
+    build_pc_experience(flow, content_json.get("brand_tagline", ""), content_json.get("experience_points"))
+    build_pc_guide(flow, content_json.get("guide_profile"))
+    build_pc_season(flow, content_json.get("season", {}), content_json.get("season_table"))
+    build_pc_qna(flow, [("utensils", content_json.get("meal_info")),
+                        ("shield-check", content_json.get("safety_note"))])
+    build_banner_request_slide(flow, cover, content_json.get("banner_copy"), bar_color=PC_NAVY)
+    build_pc_review_notes(flow, review)
+    prs.save(out_path)
+    return prs
+
 
 
 def build_mobile(content_json, out_path, review=None):
