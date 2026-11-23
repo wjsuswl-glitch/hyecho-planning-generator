@@ -551,7 +551,7 @@ def build_system_prompt(writer_style, category, parsed_sections, format_info, ha
 {layout_rule}
 
 [웹 검색 도구]
-web_search 도구를 사용할 수 있습니다. 사업부 자료에 없는 배경지식·역사·지리적 사실이
+웹 검색 도구(web_search / Google 검색)를 사용할 수 있습니다. 사업부 자료에 없는 배경지식·역사·지리적 사실이
 필요할 때(특히 background_story) 검색으로 확인한 뒤 반영하세요. 검색 없이 추측으로
 연도·수치·고유명사를 지어내지 마세요 — 확인 안 되면 그 세부사항은 빼세요.
 검색은 꼭 필요한 최소한(가능하면 1~2회)으로만 사용하세요. "검색을 진행하겠습니다",
