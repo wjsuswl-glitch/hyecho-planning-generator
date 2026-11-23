@@ -87,6 +87,17 @@ mode = st.radio(
 )
 is_mobile = mode == "모바일 최적화 기획안"
 
+# 카피를 쓰는 AI 선택(기본 Gemini). 검수는 항상 반대편 AI가 맡는다 — 같은 AI가 자기 글을
+# 검수하면 왜곡/날조를 놓치기 쉬워서.
+gen_ai = st.selectbox(
+    "카피 생성 AI", ["Gemini", "Claude"], index=0,
+    help="기획안 문구를 쓰는 AI입니다. 검수는 반대편 AI(Gemini로 쓰면 Claude, Claude로 쓰면 Gemini)가 맡아 "
+         "교차 검수합니다. 결과가 마음에 안 들면 다른 AI로 바꿔서 다시 생성해 비교해보세요.",
+)
+gen_provider = "gemini" if gen_ai == "Gemini" else "claude"
+review_provider = "claude" if gen_provider == "gemini" else "gemini"
+review_ai = "Claude" if review_provider == "claude" else "Gemini"
+
 if is_mobile:
     # 모바일 모드는 특정 기획자 문체를 입히지 않고 원본 이미지의 텍스트를 그대로
     # 옮기는 작업이라(build_mobile_system_prompt 참고) 기획자 스타일 선택이 필요
@@ -152,15 +163,17 @@ if uploaded_files and len(uploaded_files) > MAX_FILES:
              f"지금 {len(uploaded_files)}개가 선택됐어요 — {len(uploaded_files) - MAX_FILES}개를 빼주세요.")
     uploaded_files = None
 
-has_api_key = bool(os.environ.get("ANTHROPIC_API_KEY"))
-if not has_api_key:
-    st.warning("ANTHROPIC_API_KEY가 설정되지 않았어요. 지금은 프롬프트 미리보기까지만 가능해요. "
-               "터미널에서 `export ANTHROPIC_API_KEY=\"키\"` 설정 후 앱을 다시 실행하면 실제 생성이 가능합니다.")
-
+has_claude_key = bool(os.environ.get("ANTHROPIC_API_KEY"))
 has_gemini_key = bool(os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"))
-if not has_gemini_key:
-    st.info("GEMINI_API_KEY가 설정되지 않았어요. 생성은 가능하지만 왜곡/표절/사실확인 "
-            "검수 단계는 건너뜁니다. 검수까지 받으려면 `export GEMINI_API_KEY=\"키\"` 설정 후 다시 실행하세요.")
+_key_name = {"gemini": "GEMINI_API_KEY", "claude": "ANTHROPIC_API_KEY"}
+has_api_key = has_gemini_key if gen_provider == "gemini" else has_claude_key
+has_review_key = has_gemini_key if review_provider == "gemini" else has_claude_key
+if not has_api_key:
+    st.warning(f"{_key_name[gen_provider]}가 설정되지 않았어요. 지금은 프롬프트 미리보기까지만 가능해요. "
+               f"(Streamlit Cloud라면 앱 Settings → Secrets에 {_key_name[gen_provider]}를 추가하세요.)")
+if not is_mobile and not has_review_key:
+    st.info(f"{_key_name[review_provider]}가 설정되지 않았어요. 생성은 가능하지만 {review_ai}가 하는 "
+            f"왜곡/표절/사실확인 검수 단계는 건너뜁니다.")
 
 if uploaded_files and st.button("생성하기", type="primary"):
     # 확장자별로 분류: docx/pptx는 텍스트 파싱해서 sections에 병합, 이미지는 별도로 모아서
@@ -243,10 +256,11 @@ if uploaded_files and st.button("생성하기", type="primary"):
         st.info("API 키가 없어 여기서 멈춥니다. 위 프롬프트가 실제로 AI에게 전달될 내용이에요.")
     else:
         try:
-            spinner_msg = "AI 카피 생성 중..." + (" (필요 시 웹 검색 포함)" if enable_web_search else "")
+            spinner_msg = f"{gen_ai}로 카피 생성 중..." + (" (필요 시 웹 검색 포함)" if enable_web_search else "")
             with st.spinner(spinner_msg):
                 content = generate_content(
                     prompt, image_blocks=image_blocks, enable_web_search=enable_web_search,
+                    provider=gen_provider,
                 )
         except Exception as e:
             st.error(f"AI 콘텐츠 생성 중 오류가 발생했습니다:\n\n{e}")
@@ -302,8 +316,8 @@ if uploaded_files and st.button("생성하기", type="primary"):
                         "이미지와 비교해 누락된 내용이 없는지 확인해주세요.")
             else:
                 try:
-                    with st.spinner(f"Gemini로 검수 중...{tag} (왜곡/표절/사실확인)"):
-                        review = review_content(version_content, source_material_text)
+                    with st.spinner(f"{review_ai}로 검수 중...{tag} (왜곡/표절/사실확인)"):
+                        review = review_content(version_content, source_material_text, provider=review_provider)
                 except Exception as e:
                     st.warning(f"검수 중 오류가 발생해 이 단계는 건너뜁니다{tag}:\n\n{e}")
                     review = {"issues": [], "summary": ""}
@@ -313,7 +327,7 @@ if uploaded_files and st.button("생성하기", type="primary"):
                 else:
                     issues = review.get("issues", [])
                     if issues:
-                        st.warning(f"⚠️ Gemini 검수에서{tag} {len(issues)}건이 발견됐습니다 — 확인이 필요합니다.")
+                        st.warning(f"⚠️ {review_ai} 검수에서{tag} {len(issues)}건이 발견됐습니다 — 확인이 필요합니다.")
                         with st.expander(f"🔎 검수 상세 내역{tag} ({len(issues)}건)", expanded=True):
                             if review.get("summary"):
                                 st.text(review["summary"])
@@ -325,7 +339,7 @@ if uploaded_files and st.button("생성하기", type="primary"):
                                     f"{issue.get('explanation')}"
                                 )
                     else:
-                        st.info(f"✅ Gemini 검수 통과{tag} — 왜곡/날조·저작권/표절·사실확인·비문/맞춤법 "
+                        st.info(f"✅ {review_ai} 검수 통과{tag} — 왜곡/날조·저작권/표절·사실확인·비문/맞춤법 "
                                 f"이슈가 발견되지 않았습니다.")
 
             try:
