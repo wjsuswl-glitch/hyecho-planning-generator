@@ -2,7 +2,7 @@
 
 2026-11: 카피 생성을 Gemini로 바꿀 수 있게 provider 선택을 추가했다(화면에서 선택, 기본 Gemini).
 검수(reviewer.py)는 생성과 반대편 AI가 맡는다(같은 AI가 자기 글을 검수하지 않도록)."""
-import os, json, base64
+import os, json, base64, re
 
 # 서버 실행형 웹 검색 도구. 사업부 자료에 없는 배경지식/사실을 보완할 때 AI가
 # 자체적으로 웹을 검색하도록 허용한다(background_story 등). Claude 쪽에서 검색을
@@ -399,10 +399,27 @@ def _generate_with_gemini(system_prompt, image_blocks=None, dry_run=False, enabl
     )
 
 
+_CITE_RE = re.compile(r"(?:</?|\()\s*cite\b[^>\n]*>|</\s*cite\s*>", re.I)
+
+
+def _strip_cite_tags(obj):
+    """웹 검색을 쓰면 AI가 본문에 <cite index="..."> 인용 태그를 섞어 내보낼 때가 있다 —
+    기획안에 그대로 노출되므로 태그만 지우고 안쪽 글은 남긴다."""
+    if isinstance(obj, str):
+        return _CITE_RE.sub("", obj)
+    if isinstance(obj, list):
+        return [_strip_cite_tags(x) for x in obj]
+    if isinstance(obj, dict):
+        return {k: _strip_cite_tags(v) for k, v in obj.items()}
+    return obj
+
+
 def generate_content(system_prompt, image_blocks=None, dry_run=False, enable_web_search=True, provider="claude"):
     """provider: "gemini" 또는 "claude". 반환 형식은 두 경로가 같다(스키마 JSON 객체 하나)."""
     if str(provider).lower() == "gemini":
-        return _generate_with_gemini(system_prompt, image_blocks=image_blocks, dry_run=dry_run,
-                                     enable_web_search=enable_web_search)
-    return _generate_with_claude(system_prompt, image_blocks=image_blocks, dry_run=dry_run,
-                                 enable_web_search=enable_web_search)
+        result = _generate_with_gemini(system_prompt, image_blocks=image_blocks, dry_run=dry_run,
+                                       enable_web_search=enable_web_search)
+    else:
+        result = _generate_with_claude(system_prompt, image_blocks=image_blocks, dry_run=dry_run,
+                                       enable_web_search=enable_web_search)
+    return _strip_cite_tags(result)
