@@ -2918,10 +2918,26 @@ def build_pc_sections(flow, sections, ctx):
     return drawn
 
 
+_AI_MARKUP_RE = re.compile(r"(?:</?|\()\s*cite\b[^>\n]*>|</\s*cite\s*>", re.I)
+
+
+def strip_ai_markup(obj):
+    """웹 검색 결과를 쓴 AI 응답에 섞여 나오는 인용 태그(<cite index="...">...</cite>)를 제거하고
+    안쪽 글만 남긴다. 딕셔너리/리스트 안의 모든 문자열에 적용(원본은 건드리지 않고 사본을 돌려줌)."""
+    if isinstance(obj, str):
+        return _AI_MARKUP_RE.sub("", obj)
+    if isinstance(obj, list):
+        return [strip_ai_markup(x) for x in obj]
+    if isinstance(obj, dict):
+        return {k: strip_ai_markup(v) for k, v in obj.items()}
+    return obj
+
+
 def build_legacy(content_json, out_path, review=None):
     """content_json(정현지 스키마) -> 새 PPTX 파일 생성.
     review(reviewer.review_content()의 반환값)를 넘기면 마지막에 검수 결과 페이지를
     덧붙인다 — 넘기지 않으면(기본값 None) 예전과 동일하게 검수 페이지 없이 생성된다."""
+    content_json = strip_ai_markup(content_json)
     prs = Presentation()
     prs.slide_width = SLIDE_W
     prs.slide_height = SLIDE_H
@@ -2974,6 +2990,7 @@ def build_legacy(content_json, out_path, review=None):
 def build(content_json, out_path, review=None):
     """PC 상품소개 기획안 생성(정돈형 레이아웃, 2026-11). 예전 방식은 build_legacy()에 남겨둠.
     content_json 스키마는 그대로 — icon/image_count는 선택 필드(없으면 자동 추정/기본 2장)."""
+    content_json = strip_ai_markup(content_json)
     prs = Presentation()
     prs.slide_width = SLIDE_W
     prs.slide_height = SLIDE_H
@@ -3029,6 +3046,7 @@ def build_mobile(content_json, out_path, review=None):
     확인이 안 되므로, 1차 버전에서는 PC용 함수를 그대로 재사용한다(MobileSlideFlow가
     깔아주는 배경 위에 얹히긴 하지만, 폰트 크기는 PC 그대로 나온다는 뜻 — 필요하면
     다음 라운드에서 같은 패턴으로 확장 가능)."""
+    content_json = strip_ai_markup(content_json)
     prs = Presentation()
     prs.slide_width = SLIDE_W
     prs.slide_height = SLIDE_H
