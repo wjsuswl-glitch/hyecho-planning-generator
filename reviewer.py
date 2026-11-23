@@ -1,6 +1,6 @@
-"""Gemini 기반 검수(QA) 모듈 — GEMINI_API_KEY 환경변수 필요.
+"""검수(QA) 모듈 — provider="gemini"(GEMINI_API_KEY) 또는 "claude"(ANTHROPIC_API_KEY).
 
-Claude가 생성한 카피를 클로드가 아닌 다른 AI(Gemini)로 교차 검수한다:
+카피를 쓴 AI와 다른 AI가 교차 검수한다(app.py가 생성의 반대편 AI를 고른다):
 왜곡/날조, 문장 단위 저작권(표절), 사실확인, 비문/맞춤법.
 """
 import os, json
@@ -74,7 +74,7 @@ _SYSTEM_INSTRUCTION = (
 )
 
 
-def review_content(content_json, source_material_text, dry_run=False):
+def _review_with_gemini(content_json, source_material_text, dry_run=False):
     if dry_run or not (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")):
         return {
             "_dry_run": True,
@@ -111,3 +111,72 @@ def review_content(content_json, source_material_text, dry_run=False):
             f"Gemini 검수 응답을 JSON으로 파싱하는 데 실패했습니다: {e}\n"
             f"응답 원문: {resp.text[:500] if resp.text else '(empty)'}"
         ) from e
+
+
+_CLAUDE_REVIEW_MODEL = "claude-sonnet-5"
+
+
+def _loads_loose(text):
+    text = (text or "").strip()
+    cands = [text]
+    if text.startswith("```"):
+        parts = text.split("```")
+        inner = parts[1] if len(parts) > 1 else text
+        cands.append(inner[4:].strip() if inner.startswith("json") else inner.strip())
+    a, b = text.find("{"), text.rfind("}")
+    if a != -1 and b > a:
+        cands.append(text[a:b + 1])
+    for c in cands:
+        try:
+            return json.loads(c)
+        except (json.JSONDecodeError, TypeError):
+            continue
+    return None
+
+
+def _review_with_claude(content_json, source_material_text, dry_run=False):
+    """Gemini가 쓴 카피를 Claude가 검수한다(같은 AI의 자기 검수를 피하기 위한 교차검수)."""
+    if dry_run or not os.environ.get("ANTHROPIC_API_KEY"):
+        return {
+            "_dry_run": True,
+            "_note": "ANTHROPIC_API_KEY가 설정되지 않아 검수를 건너뜁니다.",
+            "issues": [],
+            "summary": "",
+        }
+
+    import anthropic
+
+    client = anthropic.Anthropic()
+    system = (
+        _SYSTEM_INSTRUCTION
+        + "\n\n응답은 설명 없이 JSON 객체 하나만 출력하세요. 형식: "
+        + '{"issues":[{"field":str,"category":"왜곡/날조|저작권/표절|사실확인|비문/맞춤법",'
+        + '"quote":str,"explanation":str,"severity":"높음|중간|낮음"}],"summary":str}'
+    )
+    user_content = (
+        f"[원본 자료]\n{source_material_text}\n\n"
+        f"[AI가 생성한 카피 (JSON)]\n{json.dumps(content_json, ensure_ascii=False, indent=2)}"
+    )
+    resp = client.messages.create(
+        model=_CLAUDE_REVIEW_MODEL,
+        max_tokens=8000,
+        thinking={"type": "disabled"},
+        system=system,
+        messages=[{"role": "user", "content": user_content}],
+    )
+    text = "".join(b.text for b in resp.content if b.type == "text")
+    result = _loads_loose(text)
+    if not isinstance(result, dict) or not isinstance(result.get("issues"), list):
+        raise RuntimeError(
+            "Claude 검수 응답을 JSON으로 파싱하는 데 실패했습니다.\n"
+            f"응답 원문: {text[:500] if text else '(empty)'}"
+        )
+    result.setdefault("summary", "")
+    return result
+
+
+def review_content(content_json, source_material_text, dry_run=False, provider="gemini"):
+    """provider: 검수를 맡을 AI("gemini" 또는 "claude"). 반환 형식은 같다."""
+    if str(provider).lower() == "claude":
+        return _review_with_claude(content_json, source_material_text, dry_run=dry_run)
+    return _review_with_gemini(content_json, source_material_text, dry_run=dry_run)
