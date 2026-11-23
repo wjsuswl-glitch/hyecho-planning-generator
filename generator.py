@@ -1,5 +1,8 @@
-"""Claude API 호출 모듈 — ANTHROPIC_API_KEY 환경변수 필요"""
-import os, json
+"""카피 생성 모듈 — provider="gemini"(GEMINI_API_KEY) 또는 "claude"(ANTHROPIC_API_KEY).
+
+2026-11: 카피 생성을 Gemini로 바꿀 수 있게 provider 선택을 추가했다(화면에서 선택, 기본 Gemini).
+검수(reviewer.py)는 생성과 반대편 AI가 맡는다(같은 AI가 자기 글을 검수하지 않도록)."""
+import os, json, base64
 
 # 서버 실행형 웹 검색 도구. 사업부 자료에 없는 배경지식/사실을 보완할 때 AI가
 # 자체적으로 웹을 검색하도록 허용한다(background_story 등). Claude 쪽에서 검색을
@@ -12,7 +15,7 @@ WEB_SEARCH_TOOL = {"type": "web_search_20260209", "name": "web_search", "max_use
 # 비용 영향은 미미함.
 MAX_TOKENS = 16000
 
-def generate_content(system_prompt, image_blocks=None, dry_run=False, enable_web_search=True):
+def _generate_with_claude(system_prompt, image_blocks=None, dry_run=False, enable_web_search=True):
     if dry_run or not os.environ.get("ANTHROPIC_API_KEY"):
         return {
             "_dry_run": True,
@@ -232,3 +235,174 @@ def generate_content(system_prompt, image_blocks=None, dry_run=False, enable_web
         "AI 응답에서 JSON을 찾지 못했습니다(설명 없이 JSON만 출력하라는 재요청도 실패).\n"
         f"응답 원문 일부: ...{joined_text[:500]}..."
     )
+
+
+# ==== Gemini 생성 경로 ======================================================================
+# 생성 모델 이름은 환경변수 GEMINI_GENERATION_MODEL로 바꿀 수 있다(코드 수정 없이 모델 교체).
+# 기본 모델 이름이 계정에서 안 열려 있으면(404/NOT_FOUND) 검수에 쓰던 flash 모델로 한 번 대체한다.
+GEMINI_GENERATION_MODEL = os.environ.get("GEMINI_GENERATION_MODEL", "gemini-3.5-pro")
+GEMINI_FALLBACK_MODEL = "gemini-3.5-flash"
+# Gemini는 생각(thinking) 토큰도 이 한도에 합산되므로 Claude 쪽(16000)보다 넉넉히 둔다.
+GEMINI_MAX_OUTPUT_TOKENS = 32000
+
+
+def _strip_fence(candidate):
+    candidate = (candidate or "").strip()
+    if candidate.startswith("```"):
+        parts = candidate.split("```")
+        candidate = parts[1] if len(parts) > 1 else candidate
+        if candidate.startswith("json"):
+            candidate = candidate[4:]
+        candidate = candidate.strip()
+    return candidate
+
+
+def _loads_loose(text):
+    """응답 텍스트에서 JSON을 최대한 찾아낸다(코드펜스, 앞뒤 설명문, [ {..} ]로 감싼 경우 대응)."""
+    text = (text or "").strip()
+    candidates = [text, _strip_fence(text)]
+    for open_ch, close_ch in (("{", "}"), ("[", "]")):
+        a, b = text.find(open_ch), text.rfind(close_ch)
+        if a != -1 and b > a:
+            candidates.append(text[a:b + 1])
+    for c in candidates:
+        try:
+            parsed = json.loads(c)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if isinstance(parsed, list) and len(parsed) == 1 and isinstance(parsed[0], dict):
+            parsed = parsed[0]
+        return parsed
+    return None
+
+
+def _single_substantive(result):
+    if not isinstance(result, dict):
+        return False
+    cover = result.get("cover")
+    if not isinstance(cover, dict):
+        return False
+    return bool((cover.get("product_name") or "").strip()) and bool((cover.get("tagline") or "").strip())
+
+
+def _substantive(result):
+    if not isinstance(result, dict):
+        return False
+    if result.get("multi_version"):
+        versions = result.get("versions")
+        return isinstance(versions, list) and bool(versions) and all(_single_substantive(v) for v in versions)
+    return _single_substantive(result)
+
+
+def _gemini_parts(types, system_prompt, image_blocks):
+    """Anthropic 형식 이미지/텍스트 블록(parser.py가 만든 것)을 Gemini Part 목록으로 변환."""
+    parts = [types.Part.from_text(text=system_prompt)]
+    for b in image_blocks or []:
+        if b.get("type") == "text":
+            parts.append(types.Part.from_text(text=b.get("text", "")))
+        elif b.get("type") == "image":
+            src = b.get("source", {})
+            parts.append(types.Part.from_bytes(
+                data=base64.b64decode(src.get("data", "")),
+                mime_type=src.get("media_type", "image/jpeg")))
+    return parts
+
+
+def _generate_with_gemini(system_prompt, image_blocks=None, dry_run=False, enable_web_search=True):
+    if dry_run or not (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")):
+        return {
+            "_dry_run": True,
+            "_note": "GEMINI_API_KEY가 설정되지 않아 실제 호출 대신 프롬프트만 반환합니다.",
+            "prompt_preview": system_prompt[:500],
+        }
+
+    from google import genai
+    from google.genai import types
+
+    client = genai.Client()
+    state = {"model": GEMINI_GENERATION_MODEL}
+
+    def call(contents, use_search):
+        cfg = dict(max_output_tokens=GEMINI_MAX_OUTPUT_TOKENS)
+        if use_search:
+            # 검색(grounding)과 JSON 모드(response_mime_type)는 함께 못 쓰는 모델이 있어서,
+            # 검색을 켠 호출은 텍스트로 받아 직접 JSON을 추출한다.
+            cfg["tools"] = [types.Tool(google_search=types.GoogleSearch())]
+        else:
+            cfg["response_mime_type"] = "application/json"
+        config = types.GenerateContentConfig(**cfg)
+        try:
+            return client.models.generate_content(model=state["model"], contents=contents, config=config)
+        except Exception as e:  # 모델 이름이 계정에서 안 열려 있으면 flash로 한 번 대체
+            msg = str(e)
+            if state["model"] != GEMINI_FALLBACK_MODEL and ("404" in msg or "NOT_FOUND" in msg or "not found" in msg.lower()):
+                state["model"] = GEMINI_FALLBACK_MODEL
+                return client.models.generate_content(model=state["model"], contents=contents, config=config)
+            raise
+
+    def finish_reason(resp):
+        try:
+            return str(resp.candidates[0].finish_reason or "")
+        except Exception:
+            return ""
+
+    def text_of(resp):
+        try:
+            return resp.text or ""
+        except Exception:  # 안전 필터 등으로 텍스트가 없는 경우
+            return ""
+
+    user_content = types.Content(role="user", parts=_gemini_parts(types, system_prompt, image_blocks))
+    resp = call([user_content], enable_web_search)
+    text = text_of(resp)
+
+    if "MAX_TOKENS" in finish_reason(resp) and not _loads_loose(text):
+        raise RuntimeError(
+            f"Gemini 응답이 출력 한도({GEMINI_MAX_OUTPUT_TOKENS} 토큰)에서 잘려 JSON이 완성되지 못했습니다 — "
+            "상품 정보가 매우 많은 경우로 보입니다. generator.py의 GEMINI_MAX_OUTPUT_TOKENS를 늘리거나 "
+            "웹 검색을 끄고 다시 시도해주세요."
+        )
+
+    result = _loads_loose(text)
+    if result is not None and _substantive(result):
+        return result
+    empty_skeleton = result is not None
+
+    # JSON이 없거나 핵심 필드가 빈 뼈대면: 지금까지의 답을 보여주고 JSON만 다시 요청(검색 없이, JSON 모드)
+    retry_instruction = (
+        "추가 검색이나 설명 문장 없이, 위에서 지시한 스키마의 모든 필드를 실제 내용으로 채운 최종 "
+        "JSON 객체 하나만 출력하세요. cover.product_name, cover.tagline처럼 핵심 필드를 비워두면 안 됩니다."
+        if empty_skeleton else
+        "추가 검색이나 설명 문장 없이, 위에서 지시한 스키마에 맞는 최종 JSON 객체 하나만 출력하세요."
+    )
+    retry_contents = [
+        user_content,
+        types.Content(role="model", parts=[types.Part.from_text(text=text or "(응답 없음)")]),
+        types.Content(role="user", parts=[types.Part.from_text(text=retry_instruction)]),
+    ]
+    retry_resp = call(retry_contents, False)
+    retry_text = text_of(retry_resp)
+    retry_result = _loads_loose(retry_text)
+    if retry_result is not None and _substantive(retry_result):
+        return retry_result
+
+    if empty_skeleton or retry_result is not None:
+        raise RuntimeError(
+            "Gemini가 스키마 구조만 있고 핵심 내용(cover.product_name/tagline 등)은 비어 있는 "
+            "JSON을 반환했습니다(재요청 포함) — 사업부 자료를 확인하거나 다시 시도해주세요.\n"
+            f"응답 원문 일부: ...{(retry_text or text)[:500]}..."
+        )
+    raise RuntimeError(
+        "Gemini 응답에서 JSON을 찾지 못했습니다(JSON만 출력하라는 재요청도 실패).\n"
+        f"종료 사유: {finish_reason(retry_resp) or finish_reason(resp) or '알 수 없음'}\n"
+        f"응답 원문 일부: ...{(retry_text or text)[:500]}..."
+    )
+
+
+def generate_content(system_prompt, image_blocks=None, dry_run=False, enable_web_search=True, provider="claude"):
+    """provider: "gemini" 또는 "claude". 반환 형식은 두 경로가 같다(스키마 JSON 객체 하나)."""
+    if str(provider).lower() == "gemini":
+        return _generate_with_gemini(system_prompt, image_blocks=image_blocks, dry_run=dry_run,
+                                     enable_web_search=enable_web_search)
+    return _generate_with_claude(system_prompt, image_blocks=image_blocks, dry_run=dry_run,
+                                 enable_web_search=enable_web_search)
