@@ -1179,8 +1179,6 @@ def build_banner_request_slide(flow, cover, banner_copy=None, bar_color=None):
         _tf_setup(bar.text_frame, "배너 기획", 14, WHITE, bold=True, align=PP_ALIGN.CENTER)
     add_text(slide, Inches(0.106), Inches(0.675), Inches(1.717), Inches(0.404),
               "배너제작요청", size=13, bold=True)
-    add_text(slide, Inches(1.823), Inches(0.733), Inches(4.672), Inches(0.303),
-              "홈페이지 개편에 따라, 배너 디자인이 전면 교체되었습니다.", size=9, color=MUTED_COLOR)
 
     # 메인 와이드 배너 — 부제 2줄(kicker+title, 후킹 카피, size 11) + 상품명(size 18, 굵게)
     add_text(slide, Inches(0.106), Inches(1.271), Inches(5.701), Inches(0.303),
