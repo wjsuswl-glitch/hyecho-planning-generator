@@ -11,8 +11,8 @@ import uuid
 BLOCK_CHOICES = [
     ("overview", "개요 (핵심 정보 한눈에)", "기간·지역·난이도·이동·숙박 등 4~6칸 + 지도 자리"),
     ("background", "배경 이야기", "여행지·테마의 배경/역사/유래 한 문단"),
-    ("highlights", "하이라이트", "이 여행의 대표 장면 (소제목 + 키워드 + 사진 + 본문)"),
-    ("points", "포인트 (차별점)", "번호 붙은 '이 상품만의 포인트' (사진 + 본문)"),
+    ("highlights", "하이라이트 (장면형)", "이 여행의 대표 장면을 소제목 + 핵심 키워드 + 사진 + 본문으로"),
+    ("points", "하이라이트 (번호형)", "이 상품의 하이라이트를 01·02… 번호 탭으로 (사진 + 본문)"),
     ("course", "코스·방문지", "코스/방문지/식당 목록 (그룹 라벨·일차 배지·스펙 칩·사진)"),
     ("schedule", "일정 한눈에", "일차별 한 줄 요약표"),
     ("cards", "사진 카드", "메뉴·맛집·숙소·객실 등 하나하나 보여줄 것 (2열)"),
@@ -22,7 +22,7 @@ BLOCK_CHOICES = [
     ("route_compare", "노선 비교", "대안 코스/노선 비교표"),
     ("spec_table", "스펙 표", "열차·크루즈·숙소 등의 스펙"),
     ("guides", "가이드 소개", "인솔자·가이드 이력"),
-    ("service_cards", "혜초 서비스 카드", "혜초와 함께라면 더 특별한 이유"),
+    ("service_cards", "혜초와 함께 떠나야 하는 이유", "노쇼핑·인솔자 동행 등 혜초 공통 서비스 카드"),
     ("text", "자유 문단", "위 블록에 안 맞는 설명 글"),
     ("list", "체크 리스트", "포함 사항·특전·준비물 나열"),
     ("table", "자유 표", "식사 구성·호텔 목록·요금표 등"),
@@ -33,10 +33,10 @@ BLOCK_HELP = {t: h for t, _, h in BLOCK_CHOICES}
 
 PRESETS = {
     "트레킹": ["overview", "background", "highlights", "course", "audience", "season", "qna", "service_cards", "closing"],
-    "문화탐방": ["background", "points", "course", "cards", "guides", "qna", "service_cards"],
+    "문화탐방": ["background", "points", "course", "cards", "qna", "service_cards"],
     "미식·온천·휴양": ["overview", "text", "cards", "schedule", "list", "audience", "closing"],
     "크루즈·열차": ["highlights", "spec_table", "schedule", "cards", "route_compare", "qna"],
-    "성지순례·도보": ["background", "course", "schedule", "qna", "guides", "season"],
+    "성지순례·도보": ["background", "course", "schedule", "qna", "season"],
 }
 DEFAULT_PRESET_BY_CATEGORY = {"트레킹": "트레킹", "문탐": "문화탐방"}
 
