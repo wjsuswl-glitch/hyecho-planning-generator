@@ -211,28 +211,30 @@ def render_assembly(category):
 
         blocks = ss.assembly
 
-        def _box(label, sub="", height=56):
-            """고정 페이지(표지/배너) 상자 — 회색, 이동·삭제 불가."""
-            sub_html = (f'<div style="font-size:12px;opacity:.65;margin-top:3px">{html.escape(sub)}</div>') if sub else ""
+        def _box(label, sub="", height=None):
+            """고정 페이지(표지/배너) 카드 — 회색 점선 + 자물쇠, 이동·삭제 불가."""
+            sub_html = (f'<div style="font-size:12.5px;opacity:.7;margin-top:2px">{html.escape(sub)}</div>') if sub else ""
             st.markdown(
-                f'<div style="border:1.5px solid rgba(128,128,128,.6);background:rgba(128,128,128,.10);height:{height}px;'
-                f'display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;'
-                f'color:rgba(128,128,128,1);box-sizing:border-box;">'
-                f'<div style="font-size:16px;font-weight:600">{html.escape(label)}</div>{sub_html}</div>',
+                '<div style="display:flex;align-items:center;gap:14px;border:1px dashed rgba(128,128,128,.55);'
+                'border-left:5px solid rgba(128,128,128,.55);background:rgba(128,128,128,.09);border-radius:10px;'
+                'padding:12px 18px;margin-bottom:8px;">'
+                '<span style="font-size:18px;opacity:.8">🔒</span>'
+                f'<div><div style="font-size:15px;font-weight:700;opacity:.75">{html.escape(label)}</div>{sub_html}</div></div>',
                 unsafe_allow_html=True)
 
         def _block_text(b):
+            """구성도 카드 문구: 첫 줄(굵게) = 블록 이름, 둘째 줄 = 설명 또는 지정한 제목."""
             t = (b.get("title") or "").strip()
-            text = ap.BLOCK_LABEL.get(b["type"], b["type"])
-            if t:
-                text += f"  ·  {t}"
+            emoji = ap.BLOCK_EMOJI.get(b["type"], "▫️")
+            first = f"{emoji}  {ap.BLOCK_LABEL.get(b['type'], b['type'])}"
+            sub = f"제목 · {t}" if t else ap.BLOCK_HELP.get(b["type"], "")
             if (b.get("memo") or "").strip():
-                text += "  📝"
-            return text
+                sub += ("   |   " if sub else "") + "📝 요청 있음"
+            return first + ("\n" + sub if sub else "")
 
-        st.caption("기획안 한 장(위→아래)의 구성도예요. 흰 상자를 마우스로 끌어서 순서를 바꾸세요. 제목·요청 입력과 "
-                   "삭제는 아래 '블록 설정'에서 해요. 회색 상자는 자동으로 들어가는 고정 페이지예요.")
-        _box("표지 (타이틀·상품요약·후보 카피) — 자동")
+        st.caption("기획안 한 장(위→아래)의 구성도예요. 카드를 마우스로 끌어서 순서를 바꾸세요(오른쪽 ⋮⋮ 표시). 제목·요청 입력과 "
+                   "삭제는 아래 '블록 설정'에서 해요. 🔒 회색 카드는 자동으로 들어가는 고정 페이지예요.")
+        _box("표지", "타이틀 · 상품요약 · 후보 카피 — 자동으로 들어가요")
 
         if not blocks:
             st.info("아직 쌓인 블록이 없어요. 위에서 프리셋을 불러오거나 아래 버튼으로 블록을 쌓아보세요.")
@@ -251,14 +253,24 @@ def render_assembly(category):
                 custom_style="""
                 .sortable-component { background: transparent !important; padding: 0 !important; }
                 .sortable-container { background: transparent !important; padding: 0 !important; border: 0 !important; }
-                .sortable-container-body { background: transparent !important; padding: 0 !important; gap: 0 !important; }
-                .sortable-item { background: #ffffff !important; color: #1f2933 !important;
-                    border: 1.5px solid #6b7280 !important; border-radius: 0 !important;
-                    margin: 0 0 -1.5px 0 !important; padding: 0 12px !important; height: 66px !important;
-                    display: flex !important; align-items: center !important; justify-content: center !important;
-                    text-align: center !important; font-size: 17px !important; font-weight: 600 !important;
-                    cursor: grab !important; box-sizing: border-box !important; width: 100% !important; }
-                .sortable-item:hover { background: #eef3f8 !important; }
+                .sortable-container-body { background: transparent !important; padding: 0 !important; gap: 0 !important;
+                    counter-reset: blk; }
+                .sortable-item { counter-increment: blk; position: relative !important; display: block !important;
+                    background: #ffffff !important; color: #6b7280 !important; text-align: left !important;
+                    white-space: pre-line !important; font-size: 12.5px !important; font-weight: 400 !important;
+                    line-height: 1.5 !important; height: auto !important; min-height: 66px !important;
+                    padding: 13px 50px 13px 60px !important; margin: 0 0 8px 0 !important; box-sizing: border-box !important;
+                    width: 100% !important; border: 1px solid #dde3ea !important; border-left: 5px solid #222A35 !important;
+                    border-radius: 10px !important; box-shadow: 0 1px 3px rgba(20,30,50,.08) !important; cursor: grab !important;
+                    transition: box-shadow .15s, border-color .15s, background .15s; }
+                .sortable-item::first-line { font-size: 16px; font-weight: 700; color: #1f2933; }
+                .sortable-item::before { content: counter(blk); position: absolute; left: 16px; top: 50%;
+                    transform: translateY(-50%); width: 28px; height: 28px; line-height: 28px; border-radius: 50%;
+                    background: #222A35; color: #ffffff; text-align: center; font-size: 13px; font-weight: 700; }
+                .sortable-item::after { content: "\\22EE\\22EE"; position: absolute; right: 16px; top: 50%;
+                    transform: translateY(-50%); color: #aab4c0; font-size: 18px; letter-spacing: -6px; font-weight: 700; }
+                .sortable-item:hover { background: #f7fafd !important; border-color: #41719C !important;
+                    border-left-color: #41719C !important; box-shadow: 0 3px 10px rgba(20,30,50,.15) !important; }
                 """,
             )
             if (isinstance(result, list) and len(result) == len(blocks)
@@ -267,12 +279,13 @@ def render_assembly(category):
                 ss.assembly = blocks = [label_to_block[r] for r in result]
         else:
             for i, b in enumerate(blocks):
-                _box(f"{i + 1}. {_block_text(b)}", height=66)
+                _box(f"{i + 1}. " + _block_text(b).replace("\n", " — "))
             st.caption("(끌어서 옮기는 부품이 설치되지 않아 아래 '블록 설정'의 ↑ ↓ 버튼으로 순서를 바꿔주세요.)")
 
-        _box("배너 기획 요청 — 자동")
+        _box("배너 기획 요청", "마지막 페이지 — 자동으로 들어가요")
 
         if blocks:
+            st.write("")
             st.markdown("**블록 설정** — 제목·요청을 적거나 삭제할 블록을 펼치세요")
         for i, b in enumerate(blocks):
             title_hint = (b.get("title") or "").strip()
@@ -298,7 +311,7 @@ def render_assembly(category):
             cols = st.columns(3)
             for col, (t, label, hlp) in zip(cols, ap.BLOCK_CHOICES[row_start:row_start + 3]):
                 col.button(label, key=f"asm_add_{t}", on_click=_asm_add, args=(t,), help=hlp,
-                           use_container_width=True)
+                           icon=ap.BLOCK_ICON.get(t), use_container_width=True)
         st.caption("같은 블록을 여러 번 쌓을 수 있어요(예: 코스를 '트레킹 코스'와 '관광 코스'로 두 번). "
                    "자료에 근거가 없는 블록은 지어내지 않고 자동으로 건너뜁니다.")
 
