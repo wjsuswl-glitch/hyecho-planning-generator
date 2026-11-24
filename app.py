@@ -1,6 +1,6 @@
 """혜초여행 기획안 자동생성 웹앱 (프로토타입)"""
 import streamlit as st
-import tempfile, os, json, sys, unicodedata
+import tempfile, os, json, sys, unicodedata, html
 
 sys.path.insert(0, os.path.dirname(__file__))
 import io
@@ -196,32 +196,61 @@ def render_assembly(category):
         c2.button("불러오기", key="asm_load_preset", on_click=_asm_load_preset, args=(preset,))
 
         blocks = ss.assembly
-        if not blocks:
-            st.info("아직 블록이 없어요. 위에서 프리셋을 불러오거나 아래에서 블록을 추가하세요.")
-        else:
-            hdr = st.columns([0.35, 2.0, 2.2, 2.8, 0.45, 0.45, 0.45])
-            for col, name in zip(hdr, ["", "블록", "제목 (비우면 AI가 작성)", "이 블록 요청 메모 (선택)", "", "", ""]):
-                col.caption(name)
-        for i, b in enumerate(blocks):
-            cols = st.columns([0.35, 2.0, 2.2, 2.8, 0.45, 0.45, 0.45])
-            cols[0].markdown(f"**{i + 1}**")
-            cols[1].markdown(f"{ap.BLOCK_LABEL.get(b['type'], b['type'])}")
-            cols[1].caption(ap.BLOCK_HELP.get(b["type"], ""))
-            b["title"] = cols[2].text_input("제목", value=b.get("title", ""), key=f"asm_t_{b['id']}",
-                                            label_visibility="collapsed", placeholder="AI가 상품에 맞게 작성")
-            b["memo"] = cols[3].text_input("메모", value=b.get("memo", ""), key=f"asm_m_{b['id']}",
-                                           label_visibility="collapsed", placeholder="예) 일차별로 풀어서, 식사만")
-            cols[4].button("▲", key=f"asm_up_{b['id']}", on_click=_asm_move, args=(i, -1), disabled=(i == 0))
-            cols[5].button("▼", key=f"asm_dn_{b['id']}", on_click=_asm_move, args=(i, 1), disabled=(i == len(blocks) - 1))
-            cols[6].button("🗑", key=f"asm_del_{b['id']}", on_click=_asm_delete, args=(i,))
 
-        a1, a2 = st.columns([3, 1])
-        add_type = a1.selectbox("블록 추가", [t for t, _, _ in ap.BLOCK_CHOICES],
-                                format_func=lambda t: f"{ap.BLOCK_LABEL[t]} — {ap.BLOCK_HELP[t]}", key="asm_add_type")
-        a2.write("")
-        a2.write("")
-        a2.button("➕ 추가", key="asm_add_btn", on_click=_asm_add, args=(add_type,))
-        st.caption("같은 블록을 여러 번 추가할 수 있어요(예: 코스를 '트레킹 코스'와 '관광 코스'로 두 번). "
+        def _box(label, sub="", fixed=False, height=112):
+            """페이지 구성도의 상자 하나(블록 이름을 가운데에 크게)."""
+            bg = "rgba(128,128,128,0.10)" if fixed else "transparent"
+            color = "rgba(128,128,128,1)" if fixed else "inherit"
+            sub_html = (f'<div style="font-size:12.5px;opacity:.65;margin-top:5px;padding:0 10px">'
+                        f'{html.escape(sub)}</div>') if sub else ""
+            st.markdown(
+                f'<div style="border:1.5px solid rgba(128,128,128,.75);background:{bg};height:{height}px;'
+                f'display:flex;flex-direction:column;align-items:center;justify-content:center;'
+                f'text-align:center;color:{color};box-sizing:border-box;">'
+                f'<div style="font-size:18px;font-weight:600">{html.escape(label)}</div>{sub_html}</div>',
+                unsafe_allow_html=True)
+
+        st.caption("아래가 기획안 한 장(위→아래)의 구성도예요. 상자를 ↑↓로 옮기고, ✏ 편집에서 제목·요청을 적고, "
+                   "필요 없는 상자는 삭제하세요. 회색 상자는 자동으로 들어가는 고정 페이지예요.")
+        l, r = st.columns([3, 2])
+        with l:
+            _box("표지 (타이틀·상품요약·후보 카피)", "자동", fixed=True, height=60)
+        for i, b in enumerate(blocks):
+            l, r = st.columns([3, 2], vertical_alignment="center")
+            with l:
+                title = (b.get("title") or "").strip()
+                memo = (b.get("memo") or "").strip()
+                sub = (f"제목: {title}" if title else "") + ("  ·  📝 요청 있음" if memo else "")
+                _box(f"{i + 1}. {ap.BLOCK_LABEL.get(b['type'], b['type'])}", sub or ap.BLOCK_HELP.get(b["type"], ""))
+            with r:
+                g1, g2 = st.columns(2)
+                g1.button("↑ 위로", key=f"asm_up_{b['id']}", on_click=_asm_move, args=(i, -1),
+                          disabled=(i == 0), use_container_width=True)
+                g2.button("↓ 아래로", key=f"asm_dn_{b['id']}", on_click=_asm_move, args=(i, 1),
+                          disabled=(i == len(blocks) - 1), use_container_width=True)
+                g3, g4 = st.columns(2)
+                with g3.popover("✏ 편집", use_container_width=True):
+                    st.markdown(f"**{i + 1}. {ap.BLOCK_LABEL.get(b['type'], b['type'])}**")
+                    b["title"] = st.text_input("섹션 제목 (비우면 AI가 작성)", value=b.get("title", ""),
+                                               key=f"asm_t_{b['id']}", placeholder="예) 걷는 만큼 달라지는 풍경")
+                    b["memo"] = st.text_input("AI에게 요청할 점 (선택)", value=b.get("memo", ""),
+                                              key=f"asm_m_{b['id']}", placeholder="예) 일차별로 풀어서 / 식사만 다뤄줘")
+                g4.button("삭제", key=f"asm_del_{b['id']}", on_click=_asm_delete, args=(i,),
+                          use_container_width=True)
+        if not blocks:
+            st.info("아직 쌓인 블록이 없어요. 위에서 프리셋을 불러오거나 아래 버튼으로 블록을 쌓아보세요.")
+        l, r = st.columns([3, 2])
+        with l:
+            _box("배너 기획 요청 (고정)", "자동", fixed=True, height=60)
+
+        st.write("")
+        st.markdown("**➕ 블록 쌓기** — 누르면 맨 아래에 추가돼요")
+        for row_start in range(0, len(ap.BLOCK_CHOICES), 3):
+            cols = st.columns(3)
+            for col, (t, label, hlp) in zip(cols, ap.BLOCK_CHOICES[row_start:row_start + 3]):
+                col.button(label, key=f"asm_add_{t}", on_click=_asm_add, args=(t,), help=hlp,
+                           use_container_width=True)
+        st.caption("같은 블록을 여러 번 쌓을 수 있어요(예: 코스를 '트레킹 코스'와 '관광 코스'로 두 번). "
                    "자료에 근거가 없는 블록은 지어내지 않고 자동으로 건너뜁니다.")
 
         st.markdown("**자주 쓰는 구성**")
