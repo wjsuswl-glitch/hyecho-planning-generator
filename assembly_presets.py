@@ -29,6 +29,21 @@ BLOCK_CHOICES = [
     ("closing", "마무리 문구", "맨 끝 감성 한 줄 (CTA 밴드)"),
 ]
 BLOCK_LABEL = {t: label for t, label, _ in BLOCK_CHOICES}
+
+# 버튼용 머티리얼 아이콘 / 구성도 카드용 이모지
+BLOCK_ICON = {
+    "overview": ":material/dashboard:", "background": ":material/menu_book:", "highlights": ":material/auto_awesome:",
+    "points": ":material/stars:", "course": ":material/route:", "schedule": ":material/calendar_month:",
+    "cards": ":material/restaurant:", "audience": ":material/groups:", "season": ":material/wb_sunny:",
+    "qna": ":material/help:", "route_compare": ":material/compare_arrows:", "spec_table": ":material/table_chart:",
+    "guides": ":material/badge:", "service_cards": ":material/verified:", "text": ":material/notes:",
+    "list": ":material/checklist:", "table": ":material/table_rows:", "closing": ":material/flag:",
+}
+BLOCK_EMOJI = {
+    "overview": "🧭", "background": "📖", "highlights": "✨", "points": "⭐", "course": "🗺️", "schedule": "🗓️",
+    "cards": "🍽️", "audience": "👥", "season": "☀️", "qna": "❓", "route_compare": "⚖️", "spec_table": "📋",
+    "guides": "🙋", "service_cards": "🤝", "text": "📝", "list": "✅", "table": "📊", "closing": "🏁",
+}
 BLOCK_HELP = {t: h for t, _, h in BLOCK_CHOICES}
 
 PRESETS = {
