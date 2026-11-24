@@ -1901,10 +1901,10 @@ def build_pc_background(flow, background_story):
 
 
 def build_pc_reasons(flow, why_reasons, product_name="", heading=None):
-    """'{상품명} 포인트 0N' — H1 + 번호 탭 항목(이미지 자리 + 본문)."""
+    """'{상품명} 하이라이트' — H1 + 번호 탭 항목(이미지 자리 + 본문)."""
     if not why_reasons:
         return None
-    heading = heading or f"{product_name} 포인트 {len(why_reasons):02d}".strip()
+    heading = heading or f"{product_name} 하이라이트".strip()
     metrics = []
     for i, r in enumerate(why_reasons):
         n_img = _image_count(r)
@@ -2097,7 +2097,7 @@ def build_pc_guide(flow, guide_profile, heading="함께하는 사람들"):
     return flow.slide
 
 
-def build_pc_experience(flow, brand_tagline, experience_points, heading="혜초와 함께라면 더 특별한 이유"):
+def build_pc_experience(flow, brand_tagline, experience_points, heading="혜초와 함께 떠나야 하는 이유"):
     """브랜드 한 줄 + 경험 포인트 아이콘 카드(최대 4열)."""
     if not brand_tagline and not experience_points:
         return None
@@ -2805,7 +2805,7 @@ def _blk_service_cards(flow, sec, ctx):
     for i in _items(sec, "points"):
         items.append(_clean_item(i))
     return build_pc_experience(flow, _s(sec.get("tagline")), items,
-                               heading=_s(sec.get("title")) or "혜초와 함께라면 더 특별한 이유")
+                               heading=_s(sec.get("title")) or "혜초와 함께 떠나야 하는 이유")
 
 
 def _blk_guides(flow, sec, ctx):
@@ -2876,10 +2876,10 @@ _BLOCK_RENDERERS = {
 }
 
 BLOCK_LABELS = {
-    "background": "배경 이야기", "points": "포인트(차별점)", "course": "코스/방문지", "route_compare": "노선 비교",
-    "spec_table": "스펙 표", "service_cards": "혜초 서비스 카드", "guides": "가이드 소개",
+    "background": "배경 이야기", "points": "하이라이트(번호형)", "course": "코스/방문지", "route_compare": "노선 비교",
+    "spec_table": "스펙 표", "service_cards": "혜초와 함께 떠나야 하는 이유", "guides": "가이드 소개",
     "season": "시즌 안내", "qna": "Q&A", "overview": "개요(핵심 정보)", "audience": "추천 대상",
-    "highlights": "하이라이트", "cards": "사진 카드", "schedule": "일정 한눈에", "closing": "마무리 문구",
+    "highlights": "하이라이트(장면형)", "cards": "사진 카드", "schedule": "일정 한눈에", "closing": "마무리 문구",
     "text": "텍스트", "list": "체크 리스트", "table": "표",
 }
 
