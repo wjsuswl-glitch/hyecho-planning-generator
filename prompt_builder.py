@@ -410,6 +410,42 @@ meal_info/safety_note→qna 블록의 항목, destinations_heading/tour_spots_he
 아닙니다 — 출력의 sections는 위 블록 형식을 따르세요(예시의 섹션 구성은 어떤 블록을 고를지 참고).""" + _LEGACY_NOTES
 
 
+_PC_SKELETON = PC_SECTIONS_SCHEMA[:PC_SECTIONS_SCHEMA.index("[본문 구성")]
+_PC_LIBRARY = PC_SECTIONS_SCHEMA[PC_SECTIONS_SCHEMA.index("사용할 수 있는 블록(type)"):PC_SECTIONS_SCHEMA.index("구성 원칙:")]
+_PC_TAIL = PC_SECTIONS_SCHEMA[PC_SECTIONS_SCHEMA.index("composition_note와 why"):]
+
+
+def pc_assembly_schema(assembly):
+    """기획자가 화면에서 조립한 구성(assembly)을 그대로 따르게 하는 스키마 텍스트.
+    assembly: [{"type","title","memo"}, ...]"""
+    lines = []
+    for i, b in enumerate(assembly, 1):
+        title = (b.get("title") or "").strip()
+        memo = (b.get("memo") or "").strip()
+        title_part = f'제목 고정: "{title}"' if title else "제목: (이 상품에 맞게 직접 작성)"
+        memo_part = f" | 요청: {memo[:500]}" if memo else ""
+        lines.append(f'  {i}. type="{b.get("type")}" | {title_part}{memo_part}')
+    spec = "\n".join(lines)
+    return (
+        _PC_SKELETON
+        + "[본문 구성 — 기획자가 직접 조립해 지정했습니다. 반드시 그대로 따르세요]\n"
+        + "표지(cover)와 배너(banner_copy)는 고정이고, sections 배열은 아래 블록을 아래 순서 그대로, "
+        + "블록당 정확히 1개씩 담으세요. 블록을 더하거나 빼거나 순서를 바꾸지 마세요.\n"
+        + spec + "\n"
+        + "- 제목이 고정된 블록은 title을 그 문구 그대로(한 글자도 바꾸지 말고) 쓰세요. "
+        + "'직접 작성'인 블록은 이 상품에 맞는 제목을 지으세요(상품명·표지 카피 반복 금지).\n"
+        + "- '요청' 메모는 그 블록의 내용·톤·구성에 반영하세요. 단, 사업부 자료에 없는 사실을 만들어서는 안 됩니다.\n"
+        + "- 사업부 자료에 근거가 없어 채울 수 없는 블록(예: 날씨 자료가 없는데 season이 지정됨)도 sections에는 "
+        + "넣되 items/content 등을 비워 두세요. 없는 사실을 지어내지 마세요(화면에서 자동으로 건너뜁니다).\n"
+        + "- 같은 type이 여러 번 지정되면 서로 다른 내용을 담고, 같은 내용을 두 블록에 반복하지 마세요.\n"
+        + "- 지정되지 않은 내용(예: 날씨, Q&A)은 다른 블록에 끼워 넣지 말고 생략하세요.\n"
+        + "- composition_note: 지정된 구성에서 어떤 블록에 어떤 자료를 담았고 무엇을 비웠는지 1~2문장. "
+        + "각 섹션의 why: 그 블록에 어떤 자료를 담았는지(비웠다면 이유) 한 문장.\n\n"
+        + _PC_LIBRARY
+        + _PC_TAIL
+    )
+
+
 PLANNER_REQUEST_LABELS = [
     ("tone", "전체 톤앤매너"),
     ("emphasize", "강조하면 좋은 부분"),
@@ -481,7 +517,7 @@ def load_fewshot_examples(writer_style, category, k=3):
     return picked
 
 def build_system_prompt(writer_style, category, parsed_sections, format_info, has_images=False,
-                         planner_request=None):
+                         planner_request=None, assembly=None):
     # load_fewshot_examples는 내부적으로 _nfc()로 정규화해서 비교하지만, 그건 그
     # 함수 안에서만 쓰이는 로컬 변수라 여기 build_system_prompt의 writer_style
     # 자체는 정규화되지 않은 채로 남아있었다 — 그 결과 STYLE_RULES[writer_style]처럼
@@ -533,7 +569,7 @@ def build_system_prompt(writer_style, category, parsed_sections, format_info, ha
     )
 
     use_sections = "destinations" in SCHEMA_HINTS.get(writer_style, "")
-    schema_text = PC_SECTIONS_SCHEMA if use_sections else SCHEMA_HINTS.get(writer_style, "(스키마 미정의 — 담당자에게 문의)")
+    schema_text = (pc_assembly_schema(assembly) if (use_sections and assembly) else PC_SECTIONS_SCHEMA) if use_sections else SCHEMA_HINTS.get(writer_style, "(스키마 미정의 — 담당자에게 문의)")
     if use_sections:
         layout_rule = ""
     else:
