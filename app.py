@@ -155,18 +155,32 @@ def _asm_bump():
     st.session_state.asm_ver = st.session_state.get("asm_ver", 0) + 1
 
 
-def _asm_move(i, d):
+def _asm_sel_index():
+    ss = st.session_state
+    for i, b in enumerate(ss.assembly):
+        if b["id"] == ss.get("asm_selected"):
+            return i
+    return -1
+
+
+def _asm_move_sel(d):
+    """선택한 블록을 한 칸 위(-1)/아래(+1)로."""
     blocks = st.session_state.assembly
+    i = _asm_sel_index()
     j = i + d
-    if 0 <= j < len(blocks):
+    if i >= 0 and 0 <= j < len(blocks):
         blocks[i], blocks[j] = blocks[j], blocks[i]
         _asm_bump()
 
 
-def _asm_delete(i):
-    blocks = st.session_state.assembly
-    if 0 <= i < len(blocks):
-        blocks.pop(i)
+def _asm_delete_sel():
+    """선택한 블록을 지우고, 같은 자리의 다음 블록(없으면 마지막)을 선택 상태로 둔다."""
+    ss = st.session_state
+    i = _asm_sel_index()
+    if i >= 0:
+        ss.assembly.pop(i)
+        if ss.assembly:
+            ss.asm_selected = ss.assembly[min(i, len(ss.assembly) - 1)]["id"]
         _asm_bump()
 
 
@@ -232,8 +246,9 @@ def render_assembly(category):
                 sub += ("   |   " if sub else "") + "📝 요청 있음"
             return first + ("\n" + sub if sub else "")
 
-        st.caption("기획안 한 장(위→아래)의 구성도예요. 카드를 마우스로 끌어서 순서를 바꾸세요(오른쪽 ⋮⋮ 표시). 제목·요청 입력과 "
-                   "삭제는 아래 '블록 설정'에서 해요. 🔒 회색 카드는 자동으로 들어가는 고정 페이지예요.")
+        toolbar = st.container()  # 아래 구성도를 그린 뒤(드래그 반영 후) 채운다 — 번호가 항상 최신 순서와 맞도록
+        st.caption("기획안 한 장(위→아래)의 구성도예요. 카드를 끌어서 순서를 바꾸거나, 위 도구 모음에서 블록을 골라 "
+                   "↑ ↓ 삭제를 누르세요. 🔒 회색 카드는 자동으로 들어가는 고정 페이지예요.")
         _box("표지", "타이틀 · 상품요약 · 후보 카피 — 자동으로 들어가요")
 
         if not blocks:
@@ -280,30 +295,42 @@ def render_assembly(category):
         else:
             for i, b in enumerate(blocks):
                 _box(f"{i + 1}. " + _block_text(b).replace("\n", " — "))
-            st.caption("(끌어서 옮기는 부품이 설치되지 않아 아래 '블록 설정'의 ↑ ↓ 버튼으로 순서를 바꿔주세요.)")
+            st.caption("(끌어서 옮기는 부품이 설치되지 않아 위 도구 모음의 ↑ ↓ 버튼으로 순서를 바꿔주세요.)")
 
         _box("배너 기획 요청", "마지막 페이지 — 자동으로 들어가요")
 
-        if blocks:
-            st.write("")
-            st.markdown("**블록 설정** — 제목·요청을 적거나 삭제할 블록을 펼치세요")
-        for i, b in enumerate(blocks):
-            title_hint = (b.get("title") or "").strip()
-            head = f"{i + 1}. {ap.BLOCK_LABEL.get(b['type'], b['type'])}" + (f"  ·  {title_hint}" if title_hint else "")
-            with st.expander(head, expanded=False):
-                st.caption(ap.BLOCK_HELP.get(b["type"], ""))
-                f1, f2 = st.columns(2)
-                b["title"] = f1.text_input("섹션 제목 (비우면 AI가 작성)", value=b.get("title", ""),
-                                           key=f"asm_t_{b['id']}", placeholder="예) 걷는 만큼 달라지는 풍경")
-                b["memo"] = f2.text_input("AI에게 요청할 점 (선택)", value=b.get("memo", ""),
-                                          key=f"asm_m_{b['id']}", placeholder="예) 일차별로 풀어서 / 식사만 다뤄줘")
-                g1, g2, g3 = st.columns(3)
-                g1.button("↑ 위로", key=f"asm_up_{b['id']}", on_click=_asm_move, args=(i, -1),
-                          disabled=(i == 0), use_container_width=True)
-                g2.button("↓ 아래로", key=f"asm_dn_{b['id']}", on_click=_asm_move, args=(i, 1),
-                          disabled=(i == len(blocks) - 1), use_container_width=True)
-                g3.button("삭제", key=f"asm_del_{b['id']}", on_click=_asm_delete, args=(i,),
+        with toolbar:
+            if blocks:
+                ids = [b["id"] for b in blocks]
+                # 선택값은 위젯 상태가 아니라 별도 변수(asm_selected)에 둔다 — 드래그로 화면이 다시 그려지는
+                # 도중에 위젯 상태가 사라져도 선택이 유지되도록, 매번 이 값으로 위젯을 맞춘다.
+                if ss.get("asm_selected") not in ids:
+                    ss.asm_selected = ids[0]
+                ss.asm_sel = ss.asm_selected
+                names = {b["id"]: f"{n + 1}. {ap.BLOCK_LABEL.get(b['type'], b['type'])}"
+                         + (f"  ·  {(b.get('title') or '').strip()}" if (b.get("title") or "").strip() else "")
+                         for n, b in enumerate(blocks)}
+                cur = ids.index(ss.asm_selected)
+                t0, t1, t2, t3 = st.columns([6, 1.3, 1.3, 1.5])
+                # 선택지 순서는 블록 id 순으로 고정 — 순서를 바꿔도 위젯이 새것으로 인식돼 선택이 풀리는 일을 막는다
+                t0.selectbox("편집할 블록", sorted(ids), key="asm_sel",
+                             on_change=lambda: ss.__setitem__("asm_selected", ss.asm_sel), format_func=lambda x: names.get(x, x),
+                             label_visibility="collapsed")
+                t1.button("", key="asm_tb_up", icon=":material/arrow_upward:", help="선택한 블록을 위로",
+                          on_click=_asm_move_sel, args=(-1,), disabled=(cur == 0), use_container_width=True)
+                t2.button("", key="asm_tb_dn", icon=":material/arrow_downward:", help="선택한 블록을 아래로",
+                          on_click=_asm_move_sel, args=(1,), disabled=(cur == len(blocks) - 1),
                           use_container_width=True)
+                t3.button("삭제", key="asm_tb_del", icon=":material/delete:", help="선택한 블록 삭제",
+                          on_click=_asm_delete_sel, use_container_width=True)
+                sel = blocks[cur]
+                with st.expander("✏️ 선택한 블록의 제목·요청 쓰기", expanded=False):
+                    st.caption(ap.BLOCK_HELP.get(sel["type"], ""))
+                    f1, f2 = st.columns(2)
+                    sel["title"] = f1.text_input("섹션 제목 (비우면 AI가 작성)", value=sel.get("title", ""),
+                                                 key=f"asm_t_{sel['id']}", placeholder="예) 걷는 만큼 달라지는 풍경")
+                    sel["memo"] = f2.text_input("AI에게 요청할 점 (선택)", value=sel.get("memo", ""),
+                                                key=f"asm_m_{sel['id']}", placeholder="예) 일차별로 풀어서 / 식사만 다뤄줘")
 
         st.write("")
         st.markdown("**➕ 블록 쌓기** — 누르면 맨 아래에 추가돼요")
