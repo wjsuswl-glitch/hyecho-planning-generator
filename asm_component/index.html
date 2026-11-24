@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: transparent;
+    font-family: "Source Sans", "Source Sans Pro", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif; color: #1f2933; }
+  #list { padding: 2px 1px 2px 1px; }
+  .card { background: #fff; border: 1px solid #dde3ea; border-left: 5px solid #222A35; border-radius: 10px;
+    box-shadow: 0 1px 3px rgba(20,30,50,.08); margin: 0 0 8px 0; transition: box-shadow .15s, border-color .15s; }
+  .card:hover { border-color: #41719C; border-left-color: #41719C; box-shadow: 0 3px 10px rgba(20,30,50,.15); }
+  .card.sel { border-color: #41719C; border-left-color: #41719C; box-shadow: 0 3px 12px rgba(65,113,156,.25); }
+  .head { position: relative; display: flex; align-items: center; gap: 14px; padding: 13px 16px 13px 16px; min-height: 66px;
+    cursor: grab; user-select: none; }
+  .num { flex: 0 0 28px; width: 28px; height: 28px; line-height: 28px; border-radius: 50%; background: #222A35; color: #fff;
+    text-align: center; font-size: 13px; font-weight: 700; }
+  .txt { flex: 1 1 auto; min-width: 0; }
+  .t { font-size: 16px; font-weight: 700; color: #1f2933; line-height: 1.35; }
+  .s { font-size: 12.5px; color: #6b7280; line-height: 1.5; margin-top: 1px; }
+  .chev { flex: 0 0 auto; color: #8a96a3; font-size: 12px; margin-right: 2px; }
+  .grip { flex: 0 0 auto; color: #aab4c0; font-size: 18px; letter-spacing: -6px; font-weight: 700; }
+  .panel { border-top: 1px dashed #d3dbe4; padding: 12px 16px 14px 58px; background: #f8fafc; border-radius: 0 0 10px 10px; cursor: default; }
+  .help { font-size: 12px; color: #8a96a3; margin-bottom: 8px; }
+  .row { display: flex; gap: 10px; }
+  .field { flex: 1 1 0; min-width: 0; }
+  label { display: block; font-size: 12.5px; color: #4b5563; margin: 0 0 4px 1px; }
+  input[type=text] { width: 100%; height: 38px; padding: 0 10px; font-size: 14px; color: #1f2933; background: #fff;
+    border: 1px solid #cfd8e3; border-radius: 8px; outline: none; font-family: inherit; }
+  input[type=text]:focus { border-color: #41719C; box-shadow: 0 0 0 2px rgba(65,113,156,.18); }
+  .btns { display: flex; gap: 10px; margin-top: 12px; }
+  button { flex: 1 1 0; height: 36px; font-size: 14px; font-family: inherit; color: #1f2933; background: #fff;
+    border: 1px solid #cfd8e3; border-radius: 8px; cursor: pointer; }
+  button:hover:not(:disabled) { border-color: #41719C; color: #41719C; }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  button.danger:hover:not(:disabled) { border-color: #d64545; color: #d64545; }
+  .ghost { opacity: .35; }
+  .chosen { box-shadow: 0 8px 20px rgba(20,30,50,.22) !important; }
+  @media (max-width: 560px) { .row { flex-direction: column; } .panel { padding-left: 16px; } }
+</style>
+</head>
+<body>
+<div id="list"></div>
+<script src="Sortable.min.js"></script>
+<script>
+(function () {
+  var S = {
+    send: function (type, data) { window.parent.postMessage(Object.assign({ isStreamlitMessage: true, type: type }, data || {}), "*"); },
+    ready: function () { this.send("streamlit:componentReady", { apiVersion: 1 }); },
+    setValue: function (v) { this.send("streamlit:setComponentValue", { value: v, dataType: "json" }); },
+    setHeight: function (h) { this.send("streamlit:setFrameHeight", { height: h }); }
+  };
+  var blocks = [], ver = null, selected = null, sortable = null, rev = 0;
+  var listEl = document.getElementById("list");
+
+  function sub(b) {
+    var s = (b.title || "").trim() ? "제목 · " + b.title.trim() : (b.help || "");
+    if ((b.memo || "").trim()) s += (s ? "   |   " : "") + "📝 요청 있음";
+    return s;
+  }
+  function emit() {
+    rev += 1;
+    S.setValue({ rev: rev, selected: selected, blocks: blocks.map(function (b) { return { id: b.id, title: b.title || "", memo: b.memo || "" }; }) });
+  }
+  function fit() { S.setHeight(Math.max(60, document.documentElement.scrollHeight)); }
+  function idx(id) { for (var i = 0; i < blocks.length; i++) if (blocks[i].id === id) return i; return -1; }
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+
+  function draw() {
+    if (sortable) { sortable.destroy(); sortable = null; }
+    listEl.innerHTML = "";
+    blocks.forEach(function (b, i) {
+      var card = el("div", "card" + (b.id === selected ? " sel" : ""));
+      card.dataset.id = b.id;
+      var head = el("div", "head");
+      head.appendChild(el("div", "num", String(i + 1)));
+      var txt = el("div", "txt");
+      txt.appendChild(el("div", "t", (b.emoji || "▫️") + "  " + b.label));
+      var s = el("div", "s", sub(b)); txt.appendChild(s);
+      head.appendChild(txt);
+      head.appendChild(el("span", "chev", b.id === selected ? "▲" : "▼"));
+      head.appendChild(el("span", "grip", "⋮⋮"));
+      head.addEventListener("click", function () {
+        selected = (selected === b.id) ? null : b.id;
+        draw();
+      });
+      card.appendChild(head);
+
+      if (b.id === selected) {
+        var p = el("div", "panel");
+        if (b.help) p.appendChild(el("div", "help", b.help));
+        var row = el("div", "row");
+        var f1 = el("div", "field"); f1.appendChild(el("label", null, "섹션 제목 (비우면 AI가 작성)"));
+        var i1 = el("input"); i1.type = "text"; i1.value = b.title || ""; i1.placeholder = "예) 걷는 만큼 달라지는 풍경";
+        i1.addEventListener("input", function () { b.title = i1.value; s.textContent = sub(b); });
+        i1.addEventListener("change", emit);
+        f1.appendChild(i1);
+        var f2 = el("div", "field"); f2.appendChild(el("label", null, "AI에게 요청할 점 (선택)"));
+        var i2 = el("input"); i2.type = "text"; i2.value = b.memo || ""; i2.placeholder = "예) 일차별로 풀어서 / 식사만 다뤄줘";
+        i2.addEventListener("input", function () { b.memo = i2.value; s.textContent = sub(b); });
+        i2.addEventListener("change", emit);
+        f2.appendChild(i2);
+        row.appendChild(f1); row.appendChild(f2); p.appendChild(row);
+
+        var btns = el("div", "btns");
+        var up = el("button", null, "↑ 위로"); up.disabled = (i === 0);
+        var dn = el("button", null, "↓ 아래로"); dn.disabled = (i === blocks.length - 1);
+        var del = el("button", "danger", "🗑 삭제");
+        up.addEventListener("click", function () { move(b.id, -1); });
+        dn.addEventListener("click", function () { move(b.id, 1); });
+        del.addEventListener("click", function () { remove(b.id); });
+        btns.appendChild(up); btns.appendChild(dn); btns.appendChild(del);
+        p.appendChild(btns);
+        card.appendChild(p);
+      }
+      listEl.appendChild(card);
+    });
+
+    sortable = Sortable.create(listEl, {
+      animation: 150, handle: ".head", ghostClass: "ghost", chosenClass: "chosen",
+      onEnd: function () {
+        var order = Array.prototype.map.call(listEl.children, function (c) { return c.dataset.id; });
+        var byId = {}; blocks.forEach(function (b) { byId[b.id] = b; });
+        blocks = order.map(function (id) { return byId[id]; });
+        draw(); emit();
+      }
+    });
+    fit();
+  }
+
+  function move(id, d) {
+    var i = idx(id), j = i + d;
+    if (i < 0 || j < 0 || j >= blocks.length) return;
+    var t = blocks[i]; blocks[i] = blocks[j]; blocks[j] = t;
+    draw(); emit();
+  }
+  function remove(id) {
+    var i = idx(id); if (i < 0) return;
+    blocks.splice(i, 1);
+    selected = blocks.length ? blocks[Math.min(i, blocks.length - 1)].id : null;
+    draw(); emit();
+  }
+
+  window.addEventListener("message", function (e) {
+    if (!e.data || e.data.type !== "streamlit:render") return;
+    var a = e.data.args || {};
+    if (ver !== a.ver) {            // 파이썬 쪽에서 구성이 바뀐 경우(프리셋·추가·불러오기)에만 다시 채운다
+      ver = a.ver;
+      blocks = JSON.parse(JSON.stringify(a.blocks || []));
+      selected = a.selected || null;
+      draw();
+    } else { fit(); }
+  });
+  if (window.ResizeObserver) new ResizeObserver(fit).observe(document.body);
+  S.ready();
+})();
+</script>
+</body>
+</html>
