@@ -331,13 +331,34 @@ def _generate_with_gemini(system_prompt, image_blocks=None, dry_run=False, enabl
         else:
             cfg["response_mime_type"] = "application/json"
         config = types.GenerateContentConfig(**cfg)
+        def _is_quota(msg):
+            return "429" in msg or "RESOURCE_EXHAUSTED" in msg or "quota" in msg.lower()
+
+        def _is_missing(msg):
+            return "404" in msg or "NOT_FOUND" in msg or "not found" in msg.lower()
+
         try:
             return client.models.generate_content(model=state["model"], contents=contents, config=config)
-        except Exception as e:  # 모델 이름이 계정에서 안 열려 있으면 flash로 한 번 대체
+        except Exception as e:
             msg = str(e)
-            if state["model"] != GEMINI_FALLBACK_MODEL and ("404" in msg or "NOT_FOUND" in msg or "not found" in msg.lower()):
+            # 모델 이름이 계정에서 안 열려 있거나(404), 그 모델의 사용 한도가 찼으면(429 — 상위 모델은
+            # 무료 한도가 아주 작거나 없음) flash 모델로 한 번 대체해서 다시 시도한다.
+            if state["model"] != GEMINI_FALLBACK_MODEL and (_is_missing(msg) or _is_quota(msg)):
                 state["model"] = GEMINI_FALLBACK_MODEL
-                return client.models.generate_content(model=state["model"], contents=contents, config=config)
+                try:
+                    return client.models.generate_content(model=state["model"], contents=contents, config=config)
+                except Exception as e2:
+                    e = e2
+                    msg = str(e2)
+            if _is_quota(msg):
+                raise RuntimeError(
+                    "Gemini 사용 한도(쿼터)를 초과했습니다(429 RESOURCE_EXHAUSTED). 원인은 보통 둘 중 하나예요: "
+                    "(1) Google AI Studio의 해당 API 키가 무료 등급이라 한도가 작거나 결제(Billing)가 연결돼 있지 "
+                    "않음 → https://aistudio.google.com 에서 키의 결제 설정을 확인, "
+                    "(2) 1분당 토큰 한도 초과 → 1~2분 뒤 다시 시도. "
+                    "급하면 화면의 '카피 생성 AI'를 Claude로 바꿔서 생성하세요.\n"
+                    f"사용한 모델: {state['model']}\n원문: {msg[:300]}"
+                ) from e
             raise
 
     def finish_reason(resp):
