@@ -2889,6 +2889,58 @@ def normalize_block_type(t):
     return _BLOCK_ALIASES.get(key)
 
 
+_CONTENT_KEYS = ("items", "facts", "routes", "specs", "rows", "table", "season_table", "highlights", "days",
+                 "cards", "content", "message", "intro", "description", "stat_line", "points", "guides")
+
+
+def block_is_empty(sec):
+    """블록에 그릴 내용이 하나도 없는지(제목/why만 있는 빈 블록)."""
+    for k in _CONTENT_KEYS:
+        v = sec.get(k)
+        if isinstance(v, (list, tuple, dict)):
+            if v:
+                return False
+        elif _s(v):
+            return False
+    return True
+
+
+def apply_assembly(content_json, assembly):
+    """기획자가 조립한 구성(assembly)대로 AI가 만든 sections를 맞춘다.
+    - 조립 순서·블록 종류를 그대로 따르고, AI가 임의로 더한 블록은 버린다.
+    - 기획자가 제목을 적은 블록은 그 제목으로 덮어쓴다(마무리 문구는 AI가 비운 경우에만 제목을 문구로 사용).
+    - AI가 만들지 않았거나 자료가 없어 비운 블록은 건너뛰고, 그 사실을 notes로 돌려준다.
+    반환: (새 content_json, notes[str])"""
+    secs = content_json.get("sections") if isinstance(content_json, dict) else None
+    pool = [x for x in (secs or []) if isinstance(x, dict)]
+    used, out, notes = set(), [], []
+    for blk in assembly or []:
+        kind = normalize_block_type(blk.get("type")) or blk.get("type")
+        label = BLOCK_LABELS.get(kind, str(kind))
+        planner_title = _s(blk.get("title"))
+        idx = next((i for i, x in enumerate(pool) if i not in used and normalize_block_type(x.get("type")) == kind), None)
+        if idx is None:
+            notes.append(f"'{planner_title or label}' 블록은 AI가 만들지 않아 빠졌어요.")
+            continue
+        used.add(idx)
+        sec = dict(pool[idx])
+        sec["type"] = kind
+        if planner_title:
+            if kind == "closing":
+                if not _s(sec.get("message")):
+                    sec["message"] = planner_title
+            else:
+                sec["title"] = planner_title
+        if block_is_empty(sec):
+            notes.append(f"'{planner_title or _s(sec.get('title')) or label}' 블록은 사업부 자료에 근거가 없어 "
+                         f"비워져서 건너뛰었어요.")
+            continue
+        out.append(sec)
+    new = dict(content_json)
+    new["sections"] = out
+    return new, notes
+
+
 def _build_generic_section(flow, sec):
     """알 수 없는 블록 종류: 제목 + (본문 | 항목 리스트)로 최대한 그대로 보여준다."""
     items = _items(sec)
