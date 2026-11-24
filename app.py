@@ -563,7 +563,7 @@ if uploaded_files and st.button("생성하기", type="primary"):
                                     f"{issue.get('explanation')}"
                                 )
                     else:
-                        st.info(f"✅ {review_ai} 검수 통과{tag} — 왜곡/날조·저작권/표절·사실확인·비문/맞춤법 "
+                        st.info(f"✅ {review_ai} 검수 통과{tag} — 왜곡/날조·저작권/표절·사실확인·비문/맞춤법·구성/배치 "
                                 f"이슈가 발견되지 않았습니다.")
 
             try:
