@@ -12,6 +12,11 @@ from reviewer import review_content
 from assembler import assemble
 import builder as dynamic_builder
 import assembly_presets as ap
+import hashlib
+try:
+    from streamlit_sortables import sort_items  # 블록을 마우스로 끌어 옮기는 부품
+except Exception:  # 설치 안 됐으면 ↑↓ 버튼만 사용
+    sort_items = None
 
 TEMPLATE_MAP_PATH = os.path.join(os.path.dirname(__file__), "template_map.json")
 
@@ -146,29 +151,38 @@ if not is_mobile:
 
 
 # ---- 구성 조립 화면 (PC 상품소개 기획안) -----------------------------------------------------
+def _asm_bump():
+    st.session_state.asm_ver = st.session_state.get("asm_ver", 0) + 1
+
+
 def _asm_move(i, d):
     blocks = st.session_state.assembly
     j = i + d
     if 0 <= j < len(blocks):
         blocks[i], blocks[j] = blocks[j], blocks[i]
+        _asm_bump()
 
 
 def _asm_delete(i):
     blocks = st.session_state.assembly
     if 0 <= i < len(blocks):
         blocks.pop(i)
+        _asm_bump()
 
 
 def _asm_add(block_type):
     st.session_state.assembly.append(ap.new_block(block_type))
+    _asm_bump()
 
 
 def _asm_load_preset(name):
     st.session_state.assembly = ap.preset_blocks(name)
+    _asm_bump()
 
 
 def _asm_load_saved(name):
     st.session_state.assembly = ap.blocks_from_saved(ap.load_saved().get(name))
+    _asm_bump()
 
 
 def render_assembly(category):
@@ -197,51 +211,86 @@ def render_assembly(category):
 
         blocks = ss.assembly
 
-        def _box(label, sub="", fixed=False, height=112):
-            """페이지 구성도의 상자 하나(블록 이름을 가운데에 크게)."""
-            bg = "rgba(128,128,128,0.10)" if fixed else "transparent"
-            color = "rgba(128,128,128,1)" if fixed else "inherit"
-            sub_html = (f'<div style="font-size:12.5px;opacity:.65;margin-top:5px;padding:0 10px">'
-                        f'{html.escape(sub)}</div>') if sub else ""
+        def _box(label, sub="", height=56):
+            """고정 페이지(표지/배너) 상자 — 회색, 이동·삭제 불가."""
+            sub_html = (f'<div style="font-size:12px;opacity:.65;margin-top:3px">{html.escape(sub)}</div>') if sub else ""
             st.markdown(
-                f'<div style="border:1.5px solid rgba(128,128,128,.75);background:{bg};height:{height}px;'
-                f'display:flex;flex-direction:column;align-items:center;justify-content:center;'
-                f'text-align:center;color:{color};box-sizing:border-box;">'
-                f'<div style="font-size:18px;font-weight:600">{html.escape(label)}</div>{sub_html}</div>',
+                f'<div style="border:1.5px solid rgba(128,128,128,.6);background:rgba(128,128,128,.10);height:{height}px;'
+                f'display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;'
+                f'color:rgba(128,128,128,1);box-sizing:border-box;">'
+                f'<div style="font-size:16px;font-weight:600">{html.escape(label)}</div>{sub_html}</div>',
                 unsafe_allow_html=True)
 
-        st.caption("아래가 기획안 한 장(위→아래)의 구성도예요. 상자를 ↑↓로 옮기고, ✏ 편집에서 제목·요청을 적고, "
-                   "필요 없는 상자는 삭제하세요. 회색 상자는 자동으로 들어가는 고정 페이지예요.")
-        l, r = st.columns([3, 2])
-        with l:
-            _box("표지 (타이틀·상품요약·후보 카피)", "자동", fixed=True, height=60)
+        def _block_text(b):
+            t = (b.get("title") or "").strip()
+            text = ap.BLOCK_LABEL.get(b["type"], b["type"])
+            if t:
+                text += f"  ·  {t}"
+            if (b.get("memo") or "").strip():
+                text += "  📝"
+            return text
+
+        st.caption("기획안 한 장(위→아래)의 구성도예요. 흰 상자를 마우스로 끌어서 순서를 바꾸세요. 제목·요청 입력과 "
+                   "삭제는 아래 '블록 설정'에서 해요. 회색 상자는 자동으로 들어가는 고정 페이지예요.")
+        _box("표지 (타이틀·상품요약·후보 카피) — 자동")
+
+        if not blocks:
+            st.info("아직 쌓인 블록이 없어요. 위에서 프리셋을 불러오거나 아래 버튼으로 블록을 쌓아보세요.")
+        elif sort_items is not None:
+            labels, label_to_block, seen = [], {}, {}
+            for b in blocks:
+                base = _block_text(b)
+                n = seen.get(base, 0)
+                seen[base] = n + 1
+                lab = base + "\u200b" * n  # 같은 이름이 여럿이어도 문자열이 겹치지 않게(눈에 안 보임)
+                labels.append(lab)
+                label_to_block[lab] = b
+            sig = hashlib.md5("|".join(sorted(labels)).encode("utf-8")).hexdigest()[:8]
+            result = sort_items(
+                labels, direction="vertical", key=f"asm_sort_{ss.get('asm_ver', 0)}_{sig}",
+                custom_style="""
+                .sortable-component { background: transparent !important; padding: 0 !important; }
+                .sortable-container { background: transparent !important; padding: 0 !important; border: 0 !important; }
+                .sortable-container-body { background: transparent !important; padding: 0 !important; gap: 0 !important; }
+                .sortable-item { background: #ffffff !important; color: #1f2933 !important;
+                    border: 1.5px solid #6b7280 !important; border-radius: 0 !important;
+                    margin: 0 0 -1.5px 0 !important; padding: 0 12px !important; height: 66px !important;
+                    display: flex !important; align-items: center !important; justify-content: center !important;
+                    text-align: center !important; font-size: 17px !important; font-weight: 600 !important;
+                    cursor: grab !important; box-sizing: border-box !important; width: 100% !important; }
+                .sortable-item:hover { background: #eef3f8 !important; }
+                """,
+            )
+            if (isinstance(result, list) and len(result) == len(blocks)
+                    and all(r in label_to_block for r in result)
+                    and len(set(result)) == len(result)):
+                ss.assembly = blocks = [label_to_block[r] for r in result]
+        else:
+            for i, b in enumerate(blocks):
+                _box(f"{i + 1}. {_block_text(b)}", height=66)
+            st.caption("(끌어서 옮기는 부품이 설치되지 않아 아래 '블록 설정'의 ↑ ↓ 버튼으로 순서를 바꿔주세요.)")
+
+        _box("배너 기획 요청 — 자동")
+
+        if blocks:
+            st.markdown("**블록 설정** — 제목·요청을 적거나 삭제할 블록을 펼치세요")
         for i, b in enumerate(blocks):
-            l, r = st.columns([3, 2], vertical_alignment="center")
-            with l:
-                title = (b.get("title") or "").strip()
-                memo = (b.get("memo") or "").strip()
-                sub = (f"제목: {title}" if title else "") + ("  ·  📝 요청 있음" if memo else "")
-                _box(f"{i + 1}. {ap.BLOCK_LABEL.get(b['type'], b['type'])}", sub or ap.BLOCK_HELP.get(b["type"], ""))
-            with r:
-                g1, g2 = st.columns(2)
+            title_hint = (b.get("title") or "").strip()
+            head = f"{i + 1}. {ap.BLOCK_LABEL.get(b['type'], b['type'])}" + (f"  ·  {title_hint}" if title_hint else "")
+            with st.expander(head, expanded=False):
+                st.caption(ap.BLOCK_HELP.get(b["type"], ""))
+                f1, f2 = st.columns(2)
+                b["title"] = f1.text_input("섹션 제목 (비우면 AI가 작성)", value=b.get("title", ""),
+                                           key=f"asm_t_{b['id']}", placeholder="예) 걷는 만큼 달라지는 풍경")
+                b["memo"] = f2.text_input("AI에게 요청할 점 (선택)", value=b.get("memo", ""),
+                                          key=f"asm_m_{b['id']}", placeholder="예) 일차별로 풀어서 / 식사만 다뤄줘")
+                g1, g2, g3 = st.columns(3)
                 g1.button("↑ 위로", key=f"asm_up_{b['id']}", on_click=_asm_move, args=(i, -1),
                           disabled=(i == 0), use_container_width=True)
                 g2.button("↓ 아래로", key=f"asm_dn_{b['id']}", on_click=_asm_move, args=(i, 1),
                           disabled=(i == len(blocks) - 1), use_container_width=True)
-                g3, g4 = st.columns(2)
-                with g3.popover("✏ 편집", use_container_width=True):
-                    st.markdown(f"**{i + 1}. {ap.BLOCK_LABEL.get(b['type'], b['type'])}**")
-                    b["title"] = st.text_input("섹션 제목 (비우면 AI가 작성)", value=b.get("title", ""),
-                                               key=f"asm_t_{b['id']}", placeholder="예) 걷는 만큼 달라지는 풍경")
-                    b["memo"] = st.text_input("AI에게 요청할 점 (선택)", value=b.get("memo", ""),
-                                              key=f"asm_m_{b['id']}", placeholder="예) 일차별로 풀어서 / 식사만 다뤄줘")
-                g4.button("삭제", key=f"asm_del_{b['id']}", on_click=_asm_delete, args=(i,),
+                g3.button("삭제", key=f"asm_del_{b['id']}", on_click=_asm_delete, args=(i,),
                           use_container_width=True)
-        if not blocks:
-            st.info("아직 쌓인 블록이 없어요. 위에서 프리셋을 불러오거나 아래 버튼으로 블록을 쌓아보세요.")
-        l, r = st.columns([3, 2])
-        with l:
-            _box("배너 기획 요청 (고정)", "자동", fixed=True, height=60)
 
         st.write("")
         st.markdown("**➕ 블록 쌓기** — 누르면 맨 아래에 추가돼요")
@@ -277,6 +326,7 @@ def render_assembly(category):
         if imp is not None and ss.get("asm_import_done") != imp.file_id:
             try:
                 ss.assembly = ap.blocks_from_saved(json.loads(imp.getvalue().decode("utf-8")))
+                _asm_bump()
                 ss.asm_import_done = imp.file_id
                 st.rerun()
             except (ValueError, UnicodeDecodeError):
