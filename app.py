@@ -106,7 +106,7 @@ is_mobile = mode == "모바일 최적화 기획안"
 # 카피를 쓰는 AI 선택(기본 Gemini). 검수는 항상 반대편 AI가 맡는다 — 같은 AI가 자기 글을
 # 검수하면 왜곡/날조를 놓치기 쉬워서.
 gen_ai = st.selectbox(
-    "카피 생성 AI", ["Gemini", "Claude"], index=0,
+    "카피 생성 AI", ["Gemini", "Claude"], index=1,
     help="기획안 문구를 쓰는 AI입니다. 검수는 반대편 AI(Gemini로 쓰면 Claude, Claude로 쓰면 Gemini)가 맡아 "
          "교차 검수합니다. 결과가 마음에 안 들면 다른 AI로 바꿔서 다시 생성해 비교해보세요.",
 )
