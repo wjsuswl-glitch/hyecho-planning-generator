@@ -18,6 +18,16 @@ try:
 except Exception:  # 설치 안 됐으면 ↑↓ 버튼만 사용
     sort_items = None
 
+# 블록 카드를 끌어 옮기고, 카드를 누르면 그 자리에서 제목·요청·위/아래/삭제가 펼쳐지는 부품(asm_component 폴더).
+# 폴더가 없거나 불러오지 못하면 예전 방식(끌어서 순서 + 위쪽 도구 모음)으로 자동 전환된다.
+try:
+    import streamlit.components.v1 as _components
+    _comp_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "asm_component")
+    _ASM_COMP = (_components.declare_component("asm_blocks", path=_comp_dir)
+                 if os.path.isfile(os.path.join(_comp_dir, "index.html")) else None)
+except Exception:
+    _ASM_COMP = None
+
 TEMPLATE_MAP_PATH = os.path.join(os.path.dirname(__file__), "template_map.json")
 
 
@@ -185,7 +195,9 @@ def _asm_delete_sel():
 
 
 def _asm_add(block_type):
-    st.session_state.assembly.append(ap.new_block(block_type))
+    nb = ap.new_block(block_type)
+    st.session_state.assembly.append(nb)
+    st.session_state.asm_focus = nb["id"]  # 새 블록은 펼쳐진 채로 보여준다(제목·요청을 바로 쓸 수 있게)
     _asm_bump()
 
 
@@ -247,12 +259,37 @@ def render_assembly(category):
             return first + ("\n" + sub if sub else "")
 
         toolbar = st.container()  # 아래 구성도를 그린 뒤(드래그 반영 후) 채운다 — 번호가 항상 최신 순서와 맞도록
-        st.caption("기획안 한 장(위→아래)의 구성도예요. 카드를 끌어서 순서를 바꾸거나, 위 도구 모음에서 블록을 골라 "
-                   "↑ ↓ 삭제를 누르세요. 🔒 회색 카드는 자동으로 들어가는 고정 페이지예요.")
+        if _ASM_COMP is not None:
+            st.caption("기획안 한 장(위→아래)의 구성도예요. 카드를 끌어서 순서를 바꾸고, 카드를 누르면 그 자리에서 "
+                       "제목·요청 쓰기와 ↑ ↓ 삭제를 할 수 있어요. 🔒 회색 카드는 자동으로 들어가는 고정 페이지예요.")
+        else:
+            st.caption("기획안 한 장(위→아래)의 구성도예요. 카드를 끌어서 순서를 바꾸거나, 위 도구 모음에서 블록을 골라 "
+                       "↑ ↓ 삭제를 누르세요. 🔒 회색 카드는 자동으로 들어가는 고정 페이지예요.")
         _box("표지", "타이틀 · 상품요약 · 후보 카피 — 자동으로 들어가요")
 
         if not blocks:
             st.info("아직 쌓인 블록이 없어요. 위에서 프리셋을 불러오거나 아래 버튼으로 블록을 쌓아보세요.")
+        elif _ASM_COMP is not None:
+            payload = [{"id": b["id"], "type": b["type"], "title": b.get("title", ""), "memo": b.get("memo", ""),
+                        "label": ap.BLOCK_LABEL.get(b["type"], b["type"]), "emoji": ap.BLOCK_EMOJI.get(b["type"], "▫️"),
+                        "help": ap.BLOCK_HELP.get(b["type"], "")} for b in blocks]
+            ver = ss.get("asm_ver", 0)
+            if ss.get("asm_focus_ver") != ver:      # 구성이 새로 채워진 첫 화면에서만 '펼칠 블록'을 알려준다
+                ss.asm_focus_ver = ver
+                focus = ss.pop("asm_focus", None)
+            else:
+                focus = None
+            res = _ASM_COMP(blocks=payload, ver=ver, selected=focus, key=f"asm_comp_{ver}", default=None)
+            if isinstance(res, dict) and isinstance(res.get("blocks"), list):
+                by_id = {b["id"]: b for b in blocks}
+                new_blocks = []
+                for r in res["blocks"]:
+                    b = by_id.get(r.get("id")) if isinstance(r, dict) else None
+                    if b is not None and b not in new_blocks:
+                        b["title"] = str(r.get("title") or "")
+                        b["memo"] = str(r.get("memo") or "")
+                        new_blocks.append(b)
+                ss.assembly = blocks = new_blocks
         elif sort_items is not None:
             labels, label_to_block, seen = [], {}, {}
             for b in blocks:
@@ -300,7 +337,7 @@ def render_assembly(category):
         _box("배너 기획 요청", "마지막 페이지 — 자동으로 들어가요")
 
         with toolbar:
-            if blocks:
+            if blocks and _ASM_COMP is None:
                 ids = [b["id"] for b in blocks]
                 # 선택값은 위젯 상태가 아니라 별도 변수(asm_selected)에 둔다 — 드래그로 화면이 다시 그려지는
                 # 도중에 위젯 상태가 사라져도 선택이 유지되도록, 매번 이 값으로 위젯을 맞춘다.
