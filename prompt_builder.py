@@ -339,9 +339,10 @@ PC_SECTIONS_SCHEMA = """{
     value는 사업부 자료에 있는 사실만. 긴 문장 말고 짧은 값("10일", "초·중급", "전용 차량")으로.
  2. background — 여행지·테마의 배경/역사/유래 한 문단.
     {"type":"background","title":str,"content":str}
- 3. highlights — 이 여행의 하이라이트 장면들(소제목 + 굵은 핵심 키워드 + 사진 자리 + 본문).
+ 3. highlights — 이 여행의 하이라이트 "장면형"(소제목 + 굵은 핵심 키워드 + 사진 자리 + 본문).
     {"type":"highlights","title":str,"items":[{"kicker":str,"keyword":str,"description":str,"image_count":int}]}
- 4. points — 번호 붙은 "이 상품만의 포인트 N가지"(사진 자리 + 본문). 아래 why_reasons 규칙을 따름.
+ 4. points — 이 상품의 하이라이트 "번호형"(01·02… 번호 탭 + 사진 자리 + 본문). 아래 why_reasons 규칙을 따름.
+    화면 제목은 "포인트"가 아니라 "하이라이트"로 표현하세요(title을 비우면 "{상품명} 하이라이트"로 표시됩니다).
     {"type":"points","title":str,"items":[{"title":str,"content":str,"icon":str,"image_count":int}]}
  5. course — 코스/방문지/식당 순서 목록(그룹 라벨·일차 배지·스펙 칩·사진 자리·본문).
     {"type":"course","title":str,"icon":str,"items":[{"title":str,"description":str,"region_tag":str,"stats":str,"image_count":int}]}
@@ -362,7 +363,8 @@ PC_SECTIONS_SCHEMA = """{
     {"type":"qna","title":str,"items":[{"icon":str,"question":str,"answer":str}]}
 13. guides — 인솔자·가이드 소개(자료에 실제 이력이 있을 때만).
     {"type":"guides","title":str,"items":[{"name":str,"title":str,"bio":str}]}
-14. service_cards — 혜초 공통 서비스 카드(아래 experience_points 규칙). 상품당 0~1회.
+14. service_cards — "혜초와 함께 떠나야 하는 이유" 카드(혜초 공통 서비스, 아래 experience_points 규칙). 상품당 0~1회.
+    title을 비우면 "혜초와 함께 떠나야 하는 이유"로 표시됩니다(다른 제목을 지을 필요 없음).
     {"type":"service_cards","title":str,"tagline":str,"items":[{"title":str,"description":str,"icon":str}]}
 15. closing — 맨 끝 마무리 한 줄(CTA 밴드). 0~1회, 반드시 마지막 블록.
     {"type":"closing","kicker":str(선택),"message":str,"sub":str(선택)}
@@ -387,10 +389,10 @@ PC_SECTIONS_SCHEMA = """{
   (예: "식탁 위의 호쿠리쿠", "걷는 만큼 달라지는 풍경"). 단, 상품명이나 표지 카피를 그대로 반복하지 마세요.
 - 상품 유형별 참고 레시피(강제 아님, 자료에 맞게 가감):
   · 트레킹: overview → background → highlights → course(+ 관광 코스는 course 한 번 더) → audience → season → qna(난이도·식사) → service_cards → closing
-  · 문화탐방: background → points → course(그룹 라벨 활용) → cards(미술관·유적 등) → guides → qna → service_cards
+  · 문화탐방: background → points → course(그룹 라벨 활용) → cards(미술관·유적 등) → qna → service_cards
   · 미식/온천/휴양: overview → text 또는 background → cards(식사·숙소) → schedule → list(포함 사항) → audience → closing
   · 크루즈/열차: highlights → spec_table → schedule → cards(객실·다이닝) → route_compare → qna
-  · 성지순례/도보: background → course → schedule → qna(체력·준비) → guides → season
+  · 성지순례/도보: background → course → schedule → qna(체력·준비) → season
 - 기획자 요청사항이 있으면 구성(강조할 블록, 뺄 블록)에도 반영하세요.
 
 composition_note와 why (기획자 확인용 — 고객 화면에는 나오지 않습니다):
