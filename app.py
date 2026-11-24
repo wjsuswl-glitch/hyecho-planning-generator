@@ -11,6 +11,7 @@ from generator import generate_content
 from reviewer import review_content
 from assembler import assemble
 import builder as dynamic_builder
+import assembly_presets as ap
 
 TEMPLATE_MAP_PATH = os.path.join(os.path.dirname(__file__), "template_map.json")
 
@@ -143,6 +144,125 @@ if not is_mobile:
                 placeholder="예) 표지 문구는 짧게, 숫자를 앞세워 주세요."),
         }
 
+
+# ---- 구성 조립 화면 (PC 상품소개 기획안) -----------------------------------------------------
+def _asm_move(i, d):
+    blocks = st.session_state.assembly
+    j = i + d
+    if 0 <= j < len(blocks):
+        blocks[i], blocks[j] = blocks[j], blocks[i]
+
+
+def _asm_delete(i):
+    blocks = st.session_state.assembly
+    if 0 <= i < len(blocks):
+        blocks.pop(i)
+
+
+def _asm_add(block_type):
+    st.session_state.assembly.append(ap.new_block(block_type))
+
+
+def _asm_load_preset(name):
+    st.session_state.assembly = ap.preset_blocks(name)
+
+
+def _asm_load_saved(name):
+    st.session_state.assembly = ap.blocks_from_saved(ap.load_saved().get(name))
+
+
+def render_assembly(category):
+    """기획자가 상품에 맞게 블록을 골라 순서대로 조립하는 화면.
+    반환: 조립 결과 [{"type","title","memo"}...] (AI에게 맡기면 None)."""
+    ss = st.session_state
+    if "assembly" not in ss:
+        ss.assembly = ap.preset_blocks(ap.DEFAULT_PRESET_BY_CATEGORY.get(category, "트레킹"))
+
+    mode_pick = st.radio(
+        "구성 방식", ["직접 조립", "AI에게 맡기기"], horizontal=True, key="asm_mode",
+        help="직접 조립: 아래에서 고른 블록·순서·제목 그대로 기획안을 만듭니다. "
+             "AI에게 맡기기: AI가 사업부 자료를 읽고 이 상품에 맞는 구성을 스스로 정합니다.",
+    )
+    if mode_pick == "AI에게 맡기기":
+        st.caption("AI가 자료를 읽고 구성을 정합니다. 생성 후 '이 상품의 구성과 이유'에서 확인할 수 있어요.")
+        return None
+
+    with st.expander("🧩 구성 조립 — 이 상품에 필요한 블록만 골라 순서를 정하세요", expanded=True):
+        c1, c2 = st.columns([3, 1])
+        preset = c1.selectbox("상품 유형 프리셋", list(ap.PRESETS.keys()), key="asm_preset",
+                              help="유형을 고르고 '불러오기'를 누르면 기본 조립이 채워지고, 이후 자유롭게 고칠 수 있어요.")
+        c2.write("")
+        c2.write("")
+        c2.button("불러오기", key="asm_load_preset", on_click=_asm_load_preset, args=(preset,))
+
+        blocks = ss.assembly
+        if not blocks:
+            st.info("아직 블록이 없어요. 위에서 프리셋을 불러오거나 아래에서 블록을 추가하세요.")
+        else:
+            hdr = st.columns([0.35, 2.0, 2.2, 2.8, 0.45, 0.45, 0.45])
+            for col, name in zip(hdr, ["", "블록", "제목 (비우면 AI가 작성)", "이 블록 요청 메모 (선택)", "", "", ""]):
+                col.caption(name)
+        for i, b in enumerate(blocks):
+            cols = st.columns([0.35, 2.0, 2.2, 2.8, 0.45, 0.45, 0.45])
+            cols[0].markdown(f"**{i + 1}**")
+            cols[1].markdown(f"{ap.BLOCK_LABEL.get(b['type'], b['type'])}")
+            cols[1].caption(ap.BLOCK_HELP.get(b["type"], ""))
+            b["title"] = cols[2].text_input("제목", value=b.get("title", ""), key=f"asm_t_{b['id']}",
+                                            label_visibility="collapsed", placeholder="AI가 상품에 맞게 작성")
+            b["memo"] = cols[3].text_input("메모", value=b.get("memo", ""), key=f"asm_m_{b['id']}",
+                                           label_visibility="collapsed", placeholder="예) 일차별로 풀어서, 식사만")
+            cols[4].button("▲", key=f"asm_up_{b['id']}", on_click=_asm_move, args=(i, -1), disabled=(i == 0))
+            cols[5].button("▼", key=f"asm_dn_{b['id']}", on_click=_asm_move, args=(i, 1), disabled=(i == len(blocks) - 1))
+            cols[6].button("🗑", key=f"asm_del_{b['id']}", on_click=_asm_delete, args=(i,))
+
+        a1, a2 = st.columns([3, 1])
+        add_type = a1.selectbox("블록 추가", [t for t, _, _ in ap.BLOCK_CHOICES],
+                                format_func=lambda t: f"{ap.BLOCK_LABEL[t]} — {ap.BLOCK_HELP[t]}", key="asm_add_type")
+        a2.write("")
+        a2.write("")
+        a2.button("➕ 추가", key="asm_add_btn", on_click=_asm_add, args=(add_type,))
+        st.caption("같은 블록을 여러 번 추가할 수 있어요(예: 코스를 '트레킹 코스'와 '관광 코스'로 두 번). "
+                   "자료에 근거가 없는 블록은 지어내지 않고 자동으로 건너뜁니다.")
+
+        st.markdown("**자주 쓰는 구성**")
+        saved = ap.load_saved()
+        s1, s2 = st.columns([3, 1])
+        save_name = s1.text_input("구성 이름", key="asm_save_name", placeholder="예) 정현지식 트레킹",
+                                  label_visibility="collapsed")
+        if s2.button("저장", key="asm_save_btn"):
+            ok, msg = ap.save_assembly(save_name, blocks)
+            (st.success if ok else st.warning)(msg)
+        if saved:
+            l1, l2, l3 = st.columns([3, 1, 1])
+            pick = l1.selectbox("저장된 구성", list(saved.keys()), key="asm_saved_pick", label_visibility="collapsed")
+            l2.button("불러오기", key="asm_load_saved", on_click=_asm_load_saved, args=(pick,))
+            if l3.button("삭제", key="asm_del_saved"):
+                ap.delete_saved(pick)
+                st.rerun()
+        st.caption("저장한 구성은 팀이 함께 쓰는 목록이에요. 앱을 다시 시작하면 지워질 수 있으니 오래 쓸 구성은 "
+                   "아래 '내보내기'로 파일도 보관하세요.")
+        e1, e2 = st.columns(2)
+        e1.download_button("📤 파일로 내보내기", json.dumps(ap.blocks_for_export(blocks), ensure_ascii=False, indent=1),
+                           file_name="구성_조립.json", mime="application/json", key="asm_export")
+        imp = e2.file_uploader("📥 파일에서 가져오기", type=["json"], key="asm_import", label_visibility="collapsed")
+        if imp is not None and ss.get("asm_import_done") != imp.file_id:
+            try:
+                ss.assembly = ap.blocks_from_saved(json.loads(imp.getvalue().decode("utf-8")))
+                ss.asm_import_done = imp.file_id
+                st.rerun()
+            except (ValueError, UnicodeDecodeError):
+                st.warning("가져올 수 없는 파일이에요. '내보내기'로 저장한 파일을 선택해주세요.")
+
+    if not ss.assembly:
+        st.warning("조립된 블록이 없어서 이번에는 AI가 구성을 정합니다. 블록을 추가하면 직접 조립한 대로 만들어요.")
+        return None
+    return ap.blocks_for_export(ss.assembly)
+
+
+assembly = None
+if not is_mobile:
+    assembly = render_assembly(category)
+
 MAX_FILES = 5
 if is_mobile:
     uploaded_files = st.file_uploader(
@@ -247,7 +367,8 @@ if uploaded_files and st.button("생성하기", type="primary"):
         with st.spinner("프롬프트 조립 중..."):
             prompt = build_system_prompt(writer_style, category, sections, format_info,
                                           has_images=bool(image_blocks),
-                                          planner_request=planner_request)
+                                          planner_request=planner_request,
+                                          assembly=assembly)
 
     with st.expander("조립된 프롬프트 보기"):
         st.text(prompt[:3000])
@@ -272,11 +393,12 @@ if uploaded_files and st.button("생성하기", type="primary"):
             f"[{k}]\n{v}" for k, v in sections.items()
         )
 
-        def _show_composition(version_content, tag=""):
+        def _show_composition(version_content, tag="", assembly_notes=None):
             """PC 기획안: AI가 이 상품에 맞춰 고른 구성(블록 순서)과 그 이유를 보여준다.
             마음에 안 들면 위 '기획자 요청사항' 칸에 원하는 구성을 적고 다시 생성하면 된다."""
             secs = version_content.get("sections") if isinstance(version_content, dict) else None
-            if is_mobile or not isinstance(secs, list) or not secs:
+            secs = secs if isinstance(secs, list) else []
+            if is_mobile or (not secs and not assembly_notes):
                 return
             labels = dynamic_builder.BLOCK_LABELS
             with st.expander(f"🧩 이 상품의 구성과 이유{tag} ({len(secs)}개 섹션)", expanded=True):
@@ -294,8 +416,13 @@ if uploaded_files and st.button("생성하기", type="primary"):
                     if why:
                         line += f"  \n   ↳ {why}"
                     st.markdown(line)
-                st.caption("구성이 마음에 안 들면 '기획자 요청사항'에 원하는 구성을 적고 다시 생성하세요. "
-                           "(예: '식사 섹션을 앞쪽으로', '추천 대상은 빼주세요', '일정은 표로 보여주세요')")
+                for n in (assembly_notes or []):
+                    st.warning(n)
+                if assembly:
+                    st.caption("직접 조립한 구성대로 만들었어요. 바꾸려면 위 '구성 조립'에서 고치고 다시 생성하세요.")
+                else:
+                    st.caption("구성이 마음에 안 들면 위 '구성 조립'에서 직접 조립하거나, '기획자 요청사항'에 "
+                               "원하는 구성을 적고 다시 생성하세요.")
 
         def _process_version(version_content, version_label=None):
             """검수 → PPTX 조립 → 다운로드 버튼까지, 콘텐츠 한 벌(=한 버전)에 대해
@@ -303,7 +430,12 @@ if uploaded_files and st.button("생성하기", type="primary"):
             사업부 자료가 다중 버전을 명시적으로 요청한 상품은 버전마다 한 번씩 부른다."""
             tag = f" — {version_label}" if version_label else ""
 
-            _show_composition(version_content, tag)
+            assembly_notes = []
+            if assembly and not is_mobile:
+                # 조립한 순서·블록대로 AI 결과를 맞춘다(AI가 임의로 더하거나 바꾼 부분 정리)
+                version_content, assembly_notes = dynamic_builder.apply_assembly(version_content, assembly)
+
+            _show_composition(version_content, tag, assembly_notes)
 
             if is_mobile:
                 # 모바일 모드는 사업부 문서(source_material_text)가 없어 Gemini
