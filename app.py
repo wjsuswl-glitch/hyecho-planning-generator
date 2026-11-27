@@ -103,6 +103,29 @@ mode = st.radio(
 )
 is_mobile = mode == "모바일 최적화 기획안"
 
+st.markdown("#### ① 사업부 자료 올리기")
+MAX_FILES = 5
+if is_mobile:
+    uploaded_files = st.file_uploader(
+        "모바일 최적화 대상 이미지 업로드 (기존 PC용 상품소개 이미지, 최대 5개 — 같은 "
+        "상품의 이어지는 페이지면 여러 장 함께 올려주세요)",
+        type=["jpg", "jpeg", "png"],
+        accept_multiple_files=True,
+    )
+else:
+    uploaded_files = st.file_uploader(
+        "사업부 원본자료 업로드 (.docx, .pptx, 이미지 — 최대 5개, 그중 .docx 최소 1개 필요)",
+        type=["docx", "pptx", "jpg", "jpeg", "png"],
+        accept_multiple_files=True,
+    )
+
+if uploaded_files and len(uploaded_files) > MAX_FILES:
+    st.error(f"파일은 최대 {MAX_FILES}개까지만 업로드할 수 있어요. "
+             f"지금 {len(uploaded_files)}개가 선택됐어요 — {len(uploaded_files) - MAX_FILES}개를 빼주세요.")
+    uploaded_files = None
+
+
+st.markdown("#### ② 기본 설정")
 # 카피를 쓰는 AI 선택(기본 Gemini). 검수는 항상 반대편 AI가 맡는다 — 같은 AI가 자기 글을
 # 검수하면 왜곡/날조를 놓치기 쉬워서.
 gen_ai = st.selectbox(
@@ -215,8 +238,21 @@ def render_assembly(category):
     """기획자가 상품에 맞게 블록을 골라 순서대로 조립하는 화면.
     반환: 조립 결과 [{"type","title","memo"}...] (AI에게 맡기면 None)."""
     ss = st.session_state
+    default_preset = ap.DEFAULT_PRESET_BY_CATEGORY.get(category, "트레킹")
     if "assembly" not in ss:
-        ss.assembly = ap.preset_blocks(ap.DEFAULT_PRESET_BY_CATEGORY.get(category, "트레킹"))
+        ss.assembly = ap.preset_blocks(default_preset)
+        ss.asm_preset = default_preset          # 프리셋 선택칸도 카테고리에 맞춰 보이게
+        ss.asm_default_preset = default_preset
+    elif ss.get("asm_default_preset") != default_preset:
+        # 카테고리를 바꿨을 때: 아직 프리셋 그대로(제목·요청을 건드리지 않음)이면 새 카테고리의 프리셋으로 바꿔준다.
+        prev = ap.PRESETS.get(ss.get("asm_default_preset"), [])
+        untouched = ([b["type"] for b in ss.assembly] == prev
+                     and not any((b.get("title") or b.get("memo")) for b in ss.assembly))
+        if untouched:
+            ss.assembly = ap.preset_blocks(default_preset)
+            ss.asm_preset = default_preset
+            _asm_bump()
+        ss.asm_default_preset = default_preset
 
     mode_pick = st.radio(
         "구성 방식", ["직접 조립", "AI에게 맡기기"], horizontal=True, key="asm_mode",
@@ -227,7 +263,7 @@ def render_assembly(category):
         st.caption("AI가 자료를 읽고 구성을 정합니다. 생성 후 '이 상품의 구성과 이유'에서 확인할 수 있어요.")
         return None
 
-    with st.expander("🧩 구성 조립 — 이 상품에 필요한 블록만 골라 순서를 정하세요", expanded=True):
+    with st.expander("🧩 구성 조립 — 필요한 블록만 골라 순서를 정하세요", expanded=True):
         c1, c2 = st.columns([3, 1])
         preset = c1.selectbox("상품 유형 프리셋", list(ap.PRESETS.keys()), key="asm_preset",
                               help="유형을 고르고 '불러오기'를 누르면 기본 조립이 채워지고, 이후 자유롭게 고칠 수 있어요.")
@@ -369,45 +405,45 @@ def render_assembly(category):
                     sel["memo"] = f2.text_input("AI에게 요청할 점 (선택)", value=sel.get("memo", ""),
                                                 key=f"asm_m_{sel['id']}", placeholder="예) 일차별로 풀어서 / 식사만 다뤄줘")
 
-        st.write("")
-        st.markdown("**➕ 블록 쌓기** — 누르면 맨 아래에 추가돼요")
-        for row_start in range(0, len(ap.BLOCK_CHOICES), 3):
-            cols = st.columns(3)
-            for col, (t, label, hlp) in zip(cols, ap.BLOCK_CHOICES[row_start:row_start + 3]):
-                col.button(label, key=f"asm_add_{t}", on_click=_asm_add, args=(t,), help=hlp,
-                           icon=ap.BLOCK_ICON.get(t), use_container_width=True)
-        st.caption("같은 블록을 여러 번 쌓을 수 있어요(예: 코스를 '트레킹 코스'와 '관광 코스'로 두 번). "
-                   "자료에 근거가 없는 블록은 지어내지 않고 자동으로 건너뜁니다.")
+        with st.expander("➕ 블록 추가하기 — 누르면 맨 아래에 쌓여요", expanded=False):
+            for row_start in range(0, len(ap.BLOCK_CHOICES), 3):
+                cols = st.columns(3)
+                for col, (t, label, hlp) in zip(cols, ap.BLOCK_CHOICES[row_start:row_start + 3]):
+                    col.button(ap.BLOCK_SHORT.get(t, label), key=f"asm_add_{t}", on_click=_asm_add, args=(t,), help=hlp,
+                               icon=ap.BLOCK_ICON.get(t), use_container_width=True)
+            st.caption("같은 블록을 여러 번 쌓을 수 있어요(예: 코스를 '트레킹 코스'와 '관광 코스'로 두 번). "
+                       "자료에 근거가 없는 블록은 지어내지 않고 자동으로 건너뜁니다.")
 
-        st.markdown("**자주 쓰는 구성**")
-        saved = ap.load_saved()
-        s1, s2 = st.columns([3, 1])
-        save_name = s1.text_input("구성 이름", key="asm_save_name", placeholder="예) 정현지식 트레킹",
-                                  label_visibility="collapsed")
-        if s2.button("저장", key="asm_save_btn"):
-            ok, msg = ap.save_assembly(save_name, blocks)
-            (st.success if ok else st.warning)(msg)
-        if saved:
-            l1, l2, l3 = st.columns([3, 1, 1])
-            pick = l1.selectbox("저장된 구성", list(saved.keys()), key="asm_saved_pick", label_visibility="collapsed")
-            l2.button("불러오기", key="asm_load_saved", on_click=_asm_load_saved, args=(pick,))
-            if l3.button("삭제", key="asm_del_saved"):
-                ap.delete_saved(pick)
-                st.rerun()
-        st.caption("저장한 구성은 팀이 함께 쓰는 목록이에요. 앱을 다시 시작하면 지워질 수 있으니 오래 쓸 구성은 "
-                   "아래 '내보내기'로 파일도 보관하세요.")
-        e1, e2 = st.columns(2)
-        e1.download_button("📤 파일로 내보내기", json.dumps(ap.blocks_for_export(blocks), ensure_ascii=False, indent=1),
-                           file_name="구성_조립.json", mime="application/json", key="asm_export")
-        imp = e2.file_uploader("📥 파일에서 가져오기", type=["json"], key="asm_import", label_visibility="collapsed")
-        if imp is not None and ss.get("asm_import_done") != imp.file_id:
-            try:
-                ss.assembly = ap.blocks_from_saved(json.loads(imp.getvalue().decode("utf-8")))
-                _asm_bump()
-                ss.asm_import_done = imp.file_id
-                st.rerun()
-            except (ValueError, UnicodeDecodeError):
-                st.warning("가져올 수 없는 파일이에요. '내보내기'로 저장한 파일을 선택해주세요.")
+
+        with st.expander("💾 자주 쓰는 구성 저장 · 불러오기 · 파일 보관", expanded=False):
+            saved = ap.load_saved()
+            s1, s2 = st.columns([3, 1])
+            save_name = s1.text_input("구성 이름", key="asm_save_name", placeholder="예) 정현지식 트레킹",
+                                      label_visibility="collapsed")
+            if s2.button("저장", key="asm_save_btn"):
+                ok, msg = ap.save_assembly(save_name, blocks)
+                (st.success if ok else st.warning)(msg)
+            if saved:
+                l1, l2, l3 = st.columns([3, 1, 1])
+                pick = l1.selectbox("저장된 구성", list(saved.keys()), key="asm_saved_pick", label_visibility="collapsed")
+                l2.button("불러오기", key="asm_load_saved", on_click=_asm_load_saved, args=(pick,))
+                if l3.button("삭제", key="asm_del_saved"):
+                    ap.delete_saved(pick)
+                    st.rerun()
+            st.caption("저장한 구성은 팀이 함께 쓰는 목록이에요. 앱을 다시 시작하면 지워질 수 있으니 오래 쓸 구성은 "
+                       "아래 '내보내기'로 파일도 보관하세요.")
+            e1, e2 = st.columns(2)
+            e1.download_button("📤 파일로 내보내기", json.dumps(ap.blocks_for_export(blocks), ensure_ascii=False, indent=1),
+                               file_name="구성_조립.json", mime="application/json", key="asm_export")
+            imp = e2.file_uploader("📥 파일에서 가져오기", type=["json"], key="asm_import", label_visibility="collapsed")
+            if imp is not None and ss.get("asm_import_done") != imp.file_id:
+                try:
+                    ss.assembly = ap.blocks_from_saved(json.loads(imp.getvalue().decode("utf-8")))
+                    _asm_bump()
+                    ss.asm_import_done = imp.file_id
+                    st.rerun()
+                except (ValueError, UnicodeDecodeError):
+                    st.warning("가져올 수 없는 파일이에요. '내보내기'로 저장한 파일을 선택해주세요.")
 
     if not ss.assembly:
         st.warning("조립된 블록이 없어서 이번에는 AI가 구성을 정합니다. 블록을 추가하면 직접 조립한 대로 만들어요.")
@@ -417,27 +453,8 @@ def render_assembly(category):
 
 assembly = None
 if not is_mobile:
+    st.markdown("#### ③ 기획안 구성")
     assembly = render_assembly(category)
-
-MAX_FILES = 5
-if is_mobile:
-    uploaded_files = st.file_uploader(
-        "모바일 최적화 대상 이미지 업로드 (기존 PC용 상품소개 이미지, 최대 5개 — 같은 "
-        "상품의 이어지는 페이지면 여러 장 함께 올려주세요)",
-        type=["jpg", "jpeg", "png"],
-        accept_multiple_files=True,
-    )
-else:
-    uploaded_files = st.file_uploader(
-        "사업부 원본자료 업로드 (.docx, .pptx, 이미지 — 최대 5개, 그중 .docx 최소 1개 필요)",
-        type=["docx", "pptx", "jpg", "jpeg", "png"],
-        accept_multiple_files=True,
-    )
-
-if uploaded_files and len(uploaded_files) > MAX_FILES:
-    st.error(f"파일은 최대 {MAX_FILES}개까지만 업로드할 수 있어요. "
-             f"지금 {len(uploaded_files)}개가 선택됐어요 — {len(uploaded_files) - MAX_FILES}개를 빼주세요.")
-    uploaded_files = None
 
 has_claude_key = bool(os.environ.get("ANTHROPIC_API_KEY"))
 has_gemini_key = bool(os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"))
@@ -451,7 +468,12 @@ if not is_mobile and not has_review_key:
     st.info(f"{_key_name[review_provider]}가 설정되지 않았어요. 생성은 가능하지만 {review_ai}가 하는 "
             f"왜곡/표절/사실확인 검수 단계는 건너뜁니다.")
 
-if uploaded_files and st.button("생성하기", type="primary"):
+st.markdown("#### ④ 기획안 만들기" if not is_mobile else "#### ③ 기획안 만들기")
+_go = st.button("생성하기", type="primary", disabled=not uploaded_files,
+                help=None if uploaded_files else "먼저 ① 에서 사업부 자료를 올려주세요.")
+if not uploaded_files:
+    st.caption("① 에서 사업부 자료를 올리면 '생성하기' 버튼이 켜져요.")
+if uploaded_files and _go:
     # 확장자별로 분류: docx/pptx는 텍스트 파싱해서 sections에 병합, 이미지는 별도로 모아서
     # 나중에 API 멀티모달 메시지에 그대로 첨부한다.
     tmp_paths = []
@@ -719,4 +741,3 @@ if uploaded_files and st.button("생성하기", type="primary"):
             pass
 
 st.divider()
-st.caption(f"현재 등록된 템플릿: {', '.join(available_styles)}")
