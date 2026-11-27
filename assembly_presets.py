@@ -45,6 +45,8 @@ BLOCK_EMOJI = {
     "guides": "🙋", "service_cards": "🤝", "text": "📝", "list": "✅", "table": "📊", "closing": "🏁",
 }
 BLOCK_HELP = {t: h for t, _, h in BLOCK_CHOICES}
+# 블록 추가 버튼(좁은 3열)에서 글자가 잘리지 않게 줄인 이름 — 구성도 카드와 기획안 제목에는 원래 이름을 쓴다
+BLOCK_SHORT = {"service_cards": "혜초와 함께하는 이유", "overview": "개요 (핵심 정보)"}
 
 PRESETS = {
     "트레킹": ["overview", "background", "highlights", "course", "audience", "season", "qna", "service_cards", "closing"],
