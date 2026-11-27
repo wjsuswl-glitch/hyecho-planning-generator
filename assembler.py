@@ -1,120 +1,206 @@
-"""기획자 조립 화면용 프리셋·블록 목록·저장/불러오기 (app.py에서 사용).
-
-조립 데이터 형식: [{"type": 블록종류, "title": 기획자가 정한 제목(비우면 AI가 작성), "memo": 이 블록 요청 메모}, ...]
-블록 종류(type)는 builder.py의 블록 라이브러리와 같다.
-"""
+"""검증된 텍스트 주입 로직 — JSON 필드를 template_map 기준으로 PPTX 도형에 씀"""
 import json
-import os
-import uuid
+from copy import deepcopy
+from pptx import Presentation
 
-# (type, 화면에 보이는 이름, 한 줄 설명) — 화면의 '블록 추가' 목록 순서
-BLOCK_CHOICES = [
-    ("overview", "개요 (핵심 정보 한눈에)", "기간·지역·난이도·이동·숙박 등 4~6칸 + 지도 자리"),
-    ("background", "배경 이야기", "여행지·테마의 배경/역사/유래 한 문단"),
-    ("highlights", "하이라이트 (장면형)", "이 여행의 대표 장면을 소제목 + 핵심 키워드 + 사진 + 본문으로"),
-    ("points", "하이라이트 (번호형)", "이 상품의 하이라이트를 01·02… 번호 탭으로 (사진 + 본문)"),
-    ("course", "코스·방문지", "코스/방문지/식당 목록 (그룹 라벨·일차 배지·스펙 칩·사진)"),
-    ("schedule", "일정 한눈에", "일차별 한 줄 요약표"),
-    ("cards", "사진 카드", "메뉴·맛집·숙소·객실 등 하나하나 보여줄 것 (2열)"),
-    ("audience", "추천 대상", "이런 분께 추천해요 (아이콘 카드)"),
-    ("season", "시즌·날씨", "최적기 배너 + 설명 + 월별 기온표"),
-    ("qna", "Q&A", "식사·난이도·준비물 등 자주 묻는 질문"),
-    ("route_compare", "노선 비교", "대안 코스/노선 비교표"),
-    ("spec_table", "스펙 표", "열차·크루즈·숙소 등의 스펙"),
-    ("guides", "가이드 소개", "인솔자·가이드 이력"),
-    ("service_cards", "혜초와 함께 떠나야 하는 이유", "노쇼핑·인솔자 동행 등 혜초 공통 서비스 카드"),
-    ("text", "자유 문단", "위 블록에 안 맞는 설명 글"),
-    ("list", "체크 리스트", "포함 사항·특전·준비물 나열"),
-    ("table", "자유 표", "식사 구성·호텔 목록·요금표 등"),
-    ("closing", "마무리 문구", "맨 끝 감성 한 줄 (CTA 밴드)"),
-]
-BLOCK_LABEL = {t: label for t, label, _ in BLOCK_CHOICES}
+NS = '{http://schemas.openxmlformats.org/drawingml/2006/main}'
 
-# 버튼용 머티리얼 아이콘 / 구성도 카드용 이모지
-BLOCK_ICON = {
-    "overview": ":material/dashboard:", "background": ":material/menu_book:", "highlights": ":material/auto_awesome:",
-    "points": ":material/stars:", "course": ":material/route:", "schedule": ":material/calendar_month:",
-    "cards": ":material/restaurant:", "audience": ":material/groups:", "season": ":material/wb_sunny:",
-    "qna": ":material/help:", "route_compare": ":material/compare_arrows:", "spec_table": ":material/table_chart:",
-    "guides": ":material/badge:", "service_cards": ":material/verified:", "text": ":material/notes:",
-    "list": ":material/checklist:", "table": ":material/table_rows:", "closing": ":material/flag:",
-}
-BLOCK_EMOJI = {
-    "overview": "🧭", "background": "📖", "highlights": "✨", "points": "⭐", "course": "🗺️", "schedule": "🗓️",
-    "cards": "🍽️", "audience": "👥", "season": "☀️", "qna": "❓", "route_compare": "⚖️", "spec_table": "📋",
-    "guides": "🙋", "service_cards": "🤝", "text": "📝", "list": "✅", "table": "📊", "closing": "🏁",
-}
-BLOCK_HELP = {t: h for t, _, h in BLOCK_CHOICES}
-# 블록 추가 버튼(좁은 3열)에서 글자가 잘리지 않게 줄인 이름 — 구성도 카드와 기획안 제목에는 원래 이름을 쓴다
-BLOCK_SHORT = {"service_cards": "혜초와 함께하는 이유", "overview": "개요 (핵심 정보)"}
-
-PRESETS = {
-    "트레킹": ["overview", "background", "highlights", "course", "audience", "season", "qna", "service_cards", "closing"],
-    "문화탐방": ["background", "points", "course", "cards", "qna", "service_cards"],
-    "미식·온천·휴양": ["overview", "text", "cards", "schedule", "list", "audience", "closing"],
-    "크루즈·열차": ["highlights", "spec_table", "schedule", "cards", "route_compare", "qna"],
-    "성지순례·도보": ["background", "course", "schedule", "qna", "season"],
-}
-DEFAULT_PRESET_BY_CATEGORY = {"트레킹": "트레킹", "문탐": "문화탐방"}
-
-_SAVED_PATH = os.path.join(os.path.dirname(__file__), "data", "saved_assemblies.json")
+def _set_text(slide, shape_id, new_text):
+    for shape in slide.shapes:
+        if shape.shape_id != shape_id or not shape.has_text_frame:
+            continue
+        tf = shape.text_frame
+        if not tf.paragraphs or not tf.paragraphs[0].runs:
+            return "SKIPPED(no base run)"
+        lines = str(new_text).split("\n")
+        base_para_xml = deepcopy(tf.paragraphs[0]._p)
+        txBody = tf._txBody
+        for p in list(tf.paragraphs):
+            txBody.remove(p._p)
+        for line in lines:
+            new_p = deepcopy(base_para_xml)
+            r_elems = new_p.findall(f'.//{NS}r')
+            if r_elems:
+                keep = r_elems[0]
+                for extra in r_elems[1:]:
+                    extra.getparent().remove(extra)
+                t_elem = keep.find(f'{NS}t')
+                t_elem.text = line
+            txBody.append(new_p)
+        return "OK"
+    return "NOT FOUND"
 
 
-def new_block(block_type, title="", memo=""):
-    return {"id": uuid.uuid4().hex[:8], "type": block_type, "title": title, "memo": memo}
+def _delete_shape(slide, shape_id):
+    """슬롯이 남을 때(실제 데이터가 템플릿 슬롯 수보다 적을 때) 텍스트만 지우지 않고
+    도형 자체를 슬라이드에서 제거한다. 텍스트만 비우면 빈 상자/잔여 이미지가 남아
+    레이아웃이 깨지므로, pptx 스킬 가이드대로 그룹 전체를 삭제한다."""
+    for shape in slide.shapes:
+        if shape.shape_id == shape_id:
+            shape._element.getparent().remove(shape._element)
+            return True
+    return False
+
+def _get_nested(data, path):
+    """'why_hyecho.points.0' 같은 경로 문자열로 JSON에서 값 추출"""
+    cur = data
+    for key in path.split("."):
+        if isinstance(cur, list):
+            idx = int(key)
+            if idx >= len(cur):
+                return None
+            cur = cur[idx]
+        elif isinstance(cur, dict):
+            cur = cur.get(key)
+        else:
+            return None
+        if cur is None:
+            return None
+    return cur
+
+def _scan_for_leaks(prs, leak_terms):
+    """조립이 끝난 뒤, 템플릿 원본(예: 안데스/방글라데시)에 있던 고유명사가
+    아직 남아있는 도형이 있는지 전수 스캔한다. 지금까지 매핑하지 못한 도형이든,
+    앞으로 완전히 새로운 지역 자료가 들어와서 생기는 예상 못한 누수든,
+    조용히 잘못된 결과물이 나가는 대신 여기서 반드시 걸리게 하기 위한 안전장치."""
+    if not leak_terms:
+        return []
+    leaks = []
+    for si, slide in enumerate(prs.slides):
+        for shape in slide.shapes:
+            if not shape.has_text_frame:
+                continue
+            text = shape.text_frame.text
+            if not text.strip():
+                continue
+            for term in leak_terms:
+                if term in text:
+                    leaks.append((si, shape.shape_id, term, text.strip()[:50]))
+                    break
+    return leaks
 
 
-def preset_blocks(name):
-    return [new_block(t) for t in PRESETS.get(name, [])]
-
-
-def blocks_from_saved(items):
-    """저장/가져온 데이터(id 없음)를 화면용 블록(id 포함)으로. 알 수 없는 type은 건너뜀."""
-    out = []
-    for it in items or []:
-        if isinstance(it, dict) and it.get("type") in BLOCK_LABEL:
-            out.append(new_block(it["type"], str(it.get("title") or ""), str(it.get("memo") or "")))
-    return out
-
-
-def blocks_for_export(blocks):
-    return [{"type": b["type"], "title": b.get("title", ""), "memo": b.get("memo", "")} for b in blocks]
-
-
-# ---- 서버 저장(팀 공용). Streamlit Cloud는 앱을 다시 시작/배포하면 이 파일이 초기화될 수 있어서,
-#      오래 두고 쓸 구성은 화면의 '파일로 내보내기'로 내 컴퓨터에도 보관하는 것을 권장한다.
-
-def load_saved():
-    try:
-        with open(_SAVED_PATH, encoding="utf-8") as f:
-            data = json.load(f)
-        return data if isinstance(data, dict) else {}
-    except (OSError, json.JSONDecodeError):
-        return {}
-
-
-def save_assembly(name, blocks):
-    name = (name or "").strip()
-    if not name:
-        return False, "저장할 이름을 입력해주세요."
-    data = load_saved()
-    data[name] = blocks_for_export(blocks)
-    try:
-        os.makedirs(os.path.dirname(_SAVED_PATH), exist_ok=True)
-        with open(_SAVED_PATH, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=1)
-    except OSError as e:
-        return False, f"저장하지 못했어요: {e}"
-    return True, f"'{name}' 구성을 저장했어요."
-
-
-def delete_saved(name):
-    data = load_saved()
-    if name in data:
-        del data[name]
-        try:
-            with open(_SAVED_PATH, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=1)
-        except OSError:
-            return False
+def _delete_slide(prs, slide_idx):
+    """슬라이드 하나를 통째로 삭제한다 (예: 숙박 정보가 없는 사업부 자료일 때
+    숙박 소개 슬라이드 자체를 제거). python-pptx는 슬라이드 삭제를 공식 지원하지
+    않아 내부 XML을 직접 조작한다."""
+    xml_slides = prs.slides._sldIdLst
+    slides = list(xml_slides)
+    if slide_idx >= len(slides):
+        return False
+    rId = slides[slide_idx].rId
+    prs.part.drop_rel(rId)
+    xml_slides.remove(slides[slide_idx])
     return True
+
+
+def assemble(content_json, writer_style, template_map_path, out_path):
+    with open(template_map_path, encoding="utf-8") as f:
+        tmap = json.load(f)[writer_style]
+
+    prs = Presentation(tmap["template"])
+    log = []
+
+    # 1) 단일 필드 매핑 (표지, why_hyecho 등 — 기존 로직)
+    for field_path, target in tmap.get("field_map", {}).items():
+        value = _get_nested(content_json, field_path)
+        if value is None:
+            log.append((field_path, "NO DATA"))
+            continue
+        # points/bullets 등 리스트나 dict면 한 줄로 합침
+        if isinstance(value, dict):
+            value = "\n".join(str(v) for v in value.values())
+        elif isinstance(value, list):
+            value = "\n".join(str(v) for v in value)
+
+        # target이 [slide,shape] 하나면 단일 타겟, [[slide,shape],...]면 같은 값을
+        # 여러 도형에 동시에 채운다 (예: 배너 슬라이드가 표지 헤드라인을 재사용)
+        targets = target if isinstance(target[0], list) else [target]
+        for slide_idx, shape_id in targets:
+            result = _set_text(prs.slides[slide_idx], shape_id, value)
+            log.append((field_path, result))
+
+    # 2) 반복 슬롯 그룹 (목적지 목록, 경유지 라벨 등 — 실제 개수가
+    #    템플릿 슬롯 수보다 적으면 남는 슬롯의 도형을 통째로 삭제한다)
+    for group_name, group_cfg in tmap.get("repeatable_groups", {}).items():
+        items = content_json.get(group_name, []) or []
+        slots = group_cfg.get("slots", [])
+
+        if len(items) > len(slots):
+            log.append((f"{group_name}(개수 초과)",
+                        f"WARNING: 실제 {len(items)}개인데 템플릿 슬롯은 {len(slots)}개뿐 — "
+                        f"뒤 {len(items) - len(slots)}개는 버려짐. 템플릿 확장 필요"))
+
+        for i, slot in enumerate(slots):
+            is_scalar_slot = "shape" in slot  # map_stops처럼 원소가 dict가 아니라 그냥 문자열인 슬롯
+            all_shape_refs = dict(slot.get("fields", {}))
+            if is_scalar_slot:
+                all_shape_refs["value"] = slot["shape"]
+            all_shape_refs.update({f"__extra_{j}": ref for j, ref in enumerate(slot.get("extra_shapes", []))})
+
+            if i < len(items):
+                item = items[i]
+                if is_scalar_slot:
+                    slide_idx, shape_id = slot["shape"]
+                    label = f"{group_name}[{i}]"
+                    if item is None:
+                        log.append((label, "NO DATA"))
+                    else:
+                        result = _set_text(prs.slides[slide_idx], shape_id, item)
+                        log.append((label, result))
+                else:
+                    for field_name, (slide_idx, shape_id) in slot.get("fields", {}).items():
+                        value = item.get(field_name) if isinstance(item, dict) else None
+                        label = f"{group_name}[{i}].{field_name}"
+                        if value is None:
+                            log.append((label, "NO DATA"))
+                            continue
+                        result = _set_text(prs.slides[slide_idx], shape_id, value)
+                        log.append((label, result))
+                # extra_shapes(이미지 자리 등 텍스트가 없는 도형)는 데이터가 있으면 그대로 둔다
+            else:
+                # 남는 슬롯 — 텍스트 도형 + 부가 도형(이미지 placeholder 등) 전체 삭제
+                for field_name, (slide_idx, shape_id) in all_shape_refs.items():
+                    label = f"{group_name}[{i}].{field_name}(초과 슬롯)"
+                    deleted = _delete_shape(prs.slides[slide_idx], shape_id)
+                    log.append((label, "DELETED" if deleted else "DELETE_FAILED(shape not found)"))
+
+    # 3) 항상 제거해야 하는 도형 (예: 실제 고객 후기 인용 — 새 지역엔 아직
+    #    실제 다녀온 고객이 없으므로 AI가 절대 지어내면 안 됨. 데이터 유무와
+    #    무관하게 매번 제거)
+    for slide_idx, shape_id in tmap.get("always_strip_shapes", []):
+        deleted = _delete_shape(prs.slides[slide_idx], shape_id)
+        log.append((f"always_strip[slide{slide_idx}/shape{shape_id}]",
+                    "DELETED" if deleted else "DELETE_FAILED(shape not found)"))
+
+    # 4) 조건부 슬라이드 삭제 (예: 숙박 정보 없으면 숙박 소개 슬라이드 전체 삭제)
+    #    반드시 다른 모든 인덱스 기반 작업이 끝난 뒤, 맨 마지막에, 슬라이드 번호가
+    #    큰 순서대로 처리한다 — 삭제하면 뒤 슬라이드 인덱스가 앞당겨지기 때문.
+    optional_slides = sorted(
+        tmap.get("optional_slides", []), key=lambda s: s["slide_idx"], reverse=True
+    )
+    for spec in optional_slides:
+        value = content_json.get(spec["requires_field"])
+        has_data = bool(value)
+        if not has_data:
+            deleted = _delete_slide(prs, spec["slide_idx"])
+            log.append((f"optional_slide[{spec['requires_field']}]",
+                        f"슬라이드 {spec['slide_idx']} 삭제됨 (데이터 없음)" if deleted
+                        else "DELETE_FAILED"))
+        else:
+            log.append((f"optional_slide[{spec['requires_field']}]", "유지 (데이터 있음)"))
+
+    prs.save(out_path)
+
+    # 조립 후 자동 누수 검사 — 템플릿 원본 지명이 남아있으면 로그에 크게 경고로 남긴다
+    leak_terms = tmap.get("leak_check_terms", [])
+    leaks = _scan_for_leaks(prs, leak_terms)
+    for slide_idx, shape_id, term, preview in leaks:
+        log.append((
+            f"⚠️ LEAK CHECK — slide{slide_idx}/shape{shape_id}",
+            f"템플릿 원본 단어 '{term}' 잔존: \"{preview}...\" — 이 도형은 아직 매핑되지 않았습니다"
+        ))
+    if not leaks and leak_terms:
+        log.append(("leak_check", f"OK — 템플릿 원본 고유명사 {len(leak_terms)}개 잔존 없음"))
+
+    return log
